@@ -302,8 +302,9 @@ MULTI=0; [[ ${#PKG_LIST[@]} -gt 1 ]] && MULTI=1
 
 # Merge-base baseline: a second worktree so typecheck and metrics can report
 # only what the change introduced. It shares node_modules by symlink when the
-# dependencies are identical; otherwise there is no baseline and the rules
-# fall back to hunk filtering (the summary detail says so).
+# dependencies are identical; otherwise typecheck has no baseline and falls
+# back to hunk filtering (the summary detail says so). Metrics need no
+# node_modules and keep the baseline whenever the worktree exists.
 BASE_WT="$OUT/base"; BASELINE=""
 cleanup_base() {
   git -C "$REPO" worktree remove --force "$BASE_WT" >/dev/null 2>&1 || rm -rf "$BASE_WT"
@@ -423,8 +424,9 @@ run_metrics() {
   case $st in TIMEOUT) summary metrics "UNAVAILABLE(timeout)" "${T_METRICS}s"; return ;; MISSING) summary metrics "UNAVAILABLE(missing)" ""; return ;; esac
   [[ -f "$TOOLS_DIR/metrics.json" ]] || { summary metrics "UNAVAILABLE(metrics-error)" "$(head -1 "$TOOLS_DIR/metrics.txt" | cut -c1-120)"; return; }
   # baseline: the same files as they exist at the merge-base
+  # the toolbelt reads only source, so a dependency change (BASELINE=lockfile-differs) keeps this baseline
   local base_json="-" base_root="-" note="" budget
-  if [[ -n "$BASELINE" ]]; then note=", no-baseline($BASELINE)"
+  if [[ "$BASELINE" == no-worktree ]]; then note=", no-baseline($BASELINE)"
   elif [[ -d "$BASE_WT/$PKG" ]]; then
     local bfiles=()
     for f in "${files[@]}"; do [[ -f "$BASE_WT/$PKG/$f" ]] && bfiles+=("$f"); done

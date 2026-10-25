@@ -120,6 +120,41 @@ bash "$S/collect.sh" --repo "$sp" --base main --head WORKTREE --out "$out/sp" >/
 assert_contains "$(cat "$out/sp/tools/summary.txt")" $'typecheck\tFAIL\t1 new' "single package: the head-only error is new"
 assert_eq "packages/api/src/x.ts(1,14): error TS2322: canned" "$(cat "$out/sp/tools/typecheck-new.txt")" "single non-root package: typecheck-new.txt is repo-relative"
 
+# a lockfile change does not cost metrics their baseline: the toolbelt reads only source
+lk=$(tmpdir); git -C "$lk" init -q -b main; mkdir -p "$lk/src"
+echo '{ "name": "lk", "type": "module" }' > "$lk/package.json"
+echo '{ "lockfileVersion": 3, "packages": { "": {}, "node_modules/lodash": { "version": "4.17.20" } } }' > "$lk/package-lock.json"
+cat > "$lk/src/legacy.js" <<'EOF'
+export function legacyDeep(a, b, c) {
+  let n = 0;
+  for (const x of a) {
+    if (x > 1) {
+      for (const y of b) {
+        if (y > x) {
+          if (c) { n += 1; } else if (y) { n += 2; } else { n += 3; }
+        } else if (y < x) {
+          while (n < 3) { n++; if (n === 2) break; }
+        }
+      }
+    } else if ((x < 0 && b.length) || c) {
+      n--;
+    }
+  }
+  return n;
+}
+
+export function small() {
+  return 1;
+}
+EOF
+git -C "$lk" -c user.email=f@e -c user.name=f add -A; git -C "$lk" -c user.email=f@e -c user.name=f commit -q -m base
+echo '{ "lockfileVersion": 3, "packages": { "": {}, "node_modules/lodash": { "version": "4.17.21" } } }' > "$lk/package-lock.json"
+sed -i '' 's/  return 1;/  return 0;/' "$lk/src/legacy.js"
+bash "$S/collect.sh" --repo "$lk" --base main --head WORKTREE --out "$out/lk" >/dev/null 2>&1
+assert_not_contains "$(grep $'^metrics\t' "$out/lk/tools/summary.txt")" "no-baseline" "lockfile change: metrics keep their baseline"
+assert_eq "" "$(grep 'sonarjs/cognitive-complexity' "$out/lk/tools/metrics.tsv")" "lockfile change: the untouched legacy function is not blamed on the edit below it"
+assert_contains "$(cat "$out/lk/tools/metrics-preexisting.tsv")" "sonarjs/cognitive-complexity" "lockfile change: the legacy function is pre-existing"
+
 # tsc that checked nothing is never `typecheck OK`: a global error (TS18003, no
 # file prefix) and a solution-style tsconfig (only references) are UNAVAILABLE
 for kind in global solution; do
