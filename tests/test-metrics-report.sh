@@ -75,6 +75,40 @@ assert_eq "" "$(col src/services/legacy.js sonarjs/cognitive-complexity monster 
 assert_eq "preexisting" "$(col src/services/legacy.js sonarjs/cognitive-complexity monster 8 "$d/o2/metrics-preexisting.tsv")" "no baseline: untouched legacy listed as pre-existing"
 assert_eq "" "$(col $f duplication '*' 6 "$d/o2/metrics.tsv")" "no jscpd report: no duplication rows"
 
+# with a baseline, rows without a function name are matched by their source line,
+# not by file alone: an old violation must not hide a new one in the same file
+mkdir -p "$repo/src" "$base/src" "$d/o4"
+printf '%s\n' 'export function a(x) {' '  if (old) { return 42 }' '}' 'items.map((v) => {' '  return v' '})' > "$base/src/svc.js"
+printf '%s\n' '// added' '// added' 'export function a(x) {' '  if (old) { return 42 }' '}' 'items.map((v) => {' '  return v' '})' 'export function b(y) {' '  if (fresh) { return 7 }' '}' 'other.map((w) => {' '  return w' '})' > "$repo/src/svc.js"
+cat > "$d/base4.json" <<EOF
+[{"filePath": "$base/src/svc.js", "messages": [
+  {"ruleId": "max-depth", "severity": 2, "message": "Blocks are nested too deeply (4). Maximum allowed is 3.", "line": 2, "column": 3},
+  {"ruleId": "no-magic-numbers", "severity": 1, "message": "No magic number: 42.", "line": 2, "column": 22},
+  {"ruleId": "complexity", "severity": 2, "message": "Arrow function has a complexity of 12. Maximum allowed is 10.", "line": 4, "column": 11}
+]}]
+EOF
+cat > "$d/head4.json" <<EOF
+[{"filePath": "$repo/src/svc.js", "messages": [
+  {"ruleId": "max-depth", "severity": 2, "message": "Blocks are nested too deeply (4). Maximum allowed is 3.", "line": 4, "column": 3},
+  {"ruleId": "no-magic-numbers", "severity": 1, "message": "No magic number: 42.", "line": 4, "column": 22},
+  {"ruleId": "complexity", "severity": 2, "message": "Arrow function has a complexity of 12. Maximum allowed is 10.", "line": 6, "column": 11},
+  {"ruleId": "max-depth", "severity": 2, "message": "Blocks are nested too deeply (4). Maximum allowed is 3.", "line": 10, "column": 3},
+  {"ruleId": "no-magic-numbers", "severity": 1, "message": "No magic number: 7.", "line": 10, "column": 24},
+  {"ruleId": "complexity", "severity": 2, "message": "Arrow function has a complexity of 12. Maximum allowed is 10.", "line": 12, "column": 11}
+]}]
+EOF
+printf 'src/svc.js\t%s\n' 1 2 9 10 11 12 13 14 > "$d/added4.tsv"
+bash "$S/metrics-report.sh" "$d/head4.json" "$repo" "$d/base4.json" "$base" - "$d/added4.tsv" "$d/o4" >/dev/null
+at() { awk -F'\t' -v l="$1" -v metric="$2" -v c="$3" '$1 == "src/svc.js" && $2 == l && $3 == metric { print $c }' "$4"; }
+assert_eq "new" "$(at 10 max-depth 8 "$d/o4/metrics.tsv")" "baseline: a new max-depth in the same file is not hidden by an old one"
+assert_eq "new" "$(at 10 no-magic-numbers 8 "$d/o4/metrics.tsv")" "baseline: a new magic number is not hidden by an old one in the same file"
+assert_eq "new" "$(at 12 complexity 8 "$d/o4/metrics.tsv")" "baseline: a new anonymous function over complexity is not hidden by an old one"
+assert_eq "preexisting" "$(at 4 max-depth 8 "$d/o4/metrics-preexisting.tsv")" "baseline: the old max-depth on a moved, unchanged line stays pre-existing"
+assert_eq "preexisting" "$(at 4 no-magic-numbers 8 "$d/o4/metrics-preexisting.tsv")" "baseline: the old magic number stays pre-existing"
+assert_eq "preexisting" "$(at 6 complexity 8 "$d/o4/metrics-preexisting.tsv")" "baseline: the old anonymous function stays pre-existing"
+assert_eq "-" "$(at 10 max-depth 7 "$d/o4/metrics.tsv")" "statement-level rows have no function: -"
+assert_eq "(anonymous)" "$(at 12 complexity 7 "$d/o4/metrics.tsv")" "a function-level row without a name says (anonymous)"
+
 # empty head report
 echo '[]' > "$d/empty.json"
 s=$(bash "$S/metrics-report.sh" "$d/empty.json" "$repo" - - - "$d/added.tsv" "$d/o3")

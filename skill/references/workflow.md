@@ -107,7 +107,8 @@ Rule-based findings from `$WORK/tools` (see `references/tooling.md`, section
   from `tools/test.json` or `tools/test.txt`. `NOT_RUNNABLE` rows are never
   findings; they appear in the Tools line only.
 - `metrics.tsv`: one finding per row, dimension `clean-code`, severity from
-  column 6, title `<metric> <value> (threshold <threshold>) in <function>`,
+  column 6, title `<metric> <value> (threshold <threshold>) in <function>`
+  (drop ` in <function>` when the function column is `-`, a statement-level rule),
   except `no-magic-numbers` rows, which you aggregate into one MINOR finding
   per file listing the values and lines (constant tables produce many rows).
 - `audit-new.tsv` rows marked `introduced` with severity `high` or
