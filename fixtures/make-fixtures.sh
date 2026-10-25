@@ -48,7 +48,7 @@ export async function query(sql, params = []) {
     return [{ id: 'u1', name: 'Alice' }];
   }
   if (/FROM orders/.test(sql) && (params[0] === 'u1' || /'u1'/.test(sql))) {
-    return [{ id: 'o1', user: 'u1', qty: 2 }];
+    return [{ id: 'o1', user_id: 'u1', qty: 2 }];
   }
   return [];
 }
@@ -348,7 +348,8 @@ export async function fetchUser(id) {
 }
 
 export async function listOrders(userId) {
-  return query('SELECT * FROM orders WHERE user_id = $1', [userId]);
+  const rows = await query('SELECT id, user_id, qty FROM orders WHERE user_id = $1', [userId]);
+  return rows.map((row) => ({ id: row.id, user: row.user_id, qty: row.qty }));
 }
 EOF
 cat > "$C/src/services/order_service.js" <<'EOF'
@@ -476,7 +477,7 @@ test('postOrder lets a save failure propagate', async () => {
 test('getOrders returns 200 with the orders of a known user', async () => {
   const res = await getOrders({ params: { id: 'u1' } });
   assert.equal(res.status, 200);
-  assert.equal(res.body.length, 1);
+  assert.deepEqual(res.body, [{ id: 'o1', user: 'u1', qty: 2 }]);
 });
 
 test('getOrders returns 404 for an unknown user', async () => {

@@ -35,6 +35,11 @@ n=$(git -C "$out/dirty" diff main --numstat -- src | awk '{ s += $1 + $2 } END {
 
 # clean: suite passes, spec and plan exist
 ( cd "$out/clean" && node --test >/dev/null 2>&1 ) && pass || fail "clean suite passes"
+# the fake answers with the real column name, so clean's suite proves the repository
+# maps rows to the spec's {id, user, qty} contract instead of leaking user_id
+grep -qF "user_id: 'u1'" "$out/clean/src/db.js" && pass || fail "fake orders row uses the user_id column"
+grep -qF 'user: row.user_id' "$out/clean/src/repos/order_repo.js" && pass || fail "clean listOrders maps rows to the contract shape"
+grep -qF "assert.deepEqual(res.body, [{ id: 'o1', user: 'u1', qty: 2 }])" "$out/clean/test/order_handler.test.js" && pass || fail "clean handler test pins the response shape"
 assert_file "$out/clean/docs/superpowers/specs/2026-10-01-NR-100-orders-design.md" "clean spec"
 assert_file "$out/clean/docs/superpowers/plans/2026-10-01-NR-100-orders-plan.md" "clean plan"
 for h in 'Goal' 'Scope' 'Current' 'Design' 'Contract' 'Error' 'Data' 'Risk' 'Testing' 'Acceptance'; do
