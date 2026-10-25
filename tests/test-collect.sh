@@ -231,6 +231,40 @@ assert_contains "$(cat "$out/fv/tools/summary.txt")" $'test\tFAIL\t' "fake vites
 assert_contains "$(cat "$out/fv/tools/summary.txt")" $'coverage\tUNAVAILABLE(no-coverage-provider)' "fake vitest: missing provider is reported, tests still ran"
 assert_contains "$(cat "$out/fv/tools/test-classified.txt")" $'sub is wrong on purpose\tFAIL' "fake vitest: classification from the JSON report"
 
+# --- Task 11: audit only when dependencies changed; introduced advisories fail ---
+assert_contains "$(cat "$out/c9/tools/summary.txt")" $'audit\tUNAVAILABLE(skipped)\tlockfile unchanged' "clean: no dependency change -> audit skipped"
+bash "$S/collect.sh" --repo "$fx/dirty" --base main --head feature/NR-100-orders --out "$out/d11" --full-audit
+assert_contains "$(cat "$out/d11/tools/summary.txt")" $'audit\tUNAVAILABLE(unsupported-audit)' "dirty --full-audit: no lockfile/package manager -> unsupported, never FAIL"
+assert_not_contains "$(grep $'^audit\t' "$out/d11/tools/summary.txt")" "FAIL" "dirty --full-audit: not FAIL"
+
+# a fake npm on PATH answers the audit; the lockfile change downgrades lodash into a vulnerable range
+au=$(tmpdir)
+git -C "$au" init -q -b main
+git -C "$au" config user.email fixture@example.com; git -C "$au" config user.name fixture
+echo '{"name":"au","dependencies":{"lodash":"4.17.21"}}' > "$au/package.json"
+echo '{ "lockfileVersion": 3, "packages": { "": {}, "node_modules/lodash": { "version": "4.17.21" } } }' > "$au/package-lock.json"
+git -C "$au" add -A && git -C "$au" commit -q -m base
+git -C "$au" checkout -q -b feature/x
+echo '{"name":"au","dependencies":{"lodash":"4.17.20"}}' > "$au/package.json"
+echo '{ "lockfileVersion": 3, "packages": { "": {}, "node_modules/lodash": { "version": "4.17.20" } } }' > "$au/package-lock.json"
+git -C "$au" add -A && git -C "$au" commit -q -m "downgrade lodash"
+fakebin=$(tmpdir); mkdir -p "$fakebin"
+cat > "$fakebin/npm" <<'EOF'
+#!/bin/sh
+case "$*" in *audit*) cat <<'JSON'
+{ "auditReportVersion": 2, "vulnerabilities": { "lodash": { "name": "lodash", "severity": "high", "isDirect": true,
+  "via": [ { "source": 1, "name": "lodash", "title": "Prototype Pollution in lodash", "url": "https://github.com/advisories/GHSA-p6mc-m468-83gw", "severity": "high", "range": "<4.17.21" } ],
+  "range": "<4.17.21", "nodes": ["node_modules/lodash"], "fixAvailable": true } }, "metadata": {} }
+JSON
+exit 1 ;; esac
+echo "fake npm: unexpected call $*" >&2; exit 2
+EOF
+chmod +x "$fakebin/npm"
+PATH="$fakebin:$PATH" bash "$S/collect.sh" --repo "$au" --base main --head feature/x --out "$out/au"
+assert_contains "$(cat "$out/au/tools/summary.txt")" $'audit\tFAIL\t1 introduced (1 high/critical), 0 pre-existing' "audit: introduced high advisory fails"
+assert_contains "$(cat "$out/au/tools/audit-new.tsv")" $'lodash\t4.17.20\thigh\tGHSA-p6mc-m468-83gw\tintroduced' "audit: row written"
+assert_file "$out/au/tools/audit.json" "audit: raw report kept"
+
 # --- not a Node.js repo ---
 nn=$(tmpdir); git -C "$nn" init -q -b main; echo hi > "$nn/README.md"
 git -C "$nn" -c user.email=f@e -c user.name=f add -A; git -C "$nn" -c user.email=f@e -c user.name=f commit -q -m base

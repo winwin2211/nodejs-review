@@ -465,9 +465,40 @@ run_test() {
   summary coverage OK "$tot changed lines"
 }
 
+run_audit() {
+  # only when this change touched the dependency set: the audit sends the
+  # dependency list to the registry, so it is not run casually
+  local dep_changed=0 pj="$PKG/package.json" cmd=() st line hc head_lock="-" base_lock="-"
+  [[ "$PKG" == "." ]] && pj="package.json"
+  grep -qxF "$pj" "$OUT/changed-files.txt" && dep_changed=1
+  [[ -n "$LOCKFILE" ]] && grep -qxF "$LOCKFILE" "$OUT/changed-files.txt" && dep_changed=1
+  if [[ $FULL_AUDIT -eq 0 && $dep_changed -eq 0 ]]; then summary audit "UNAVAILABLE(skipped)" "lockfile unchanged"; return; fi
+  case "$PM" in
+    npm) cmd=(npm audit --json) ;;
+    pnpm) cmd=(pnpm audit --json) ;;
+    *) summary audit "UNAVAILABLE(unsupported-audit)" "$PM"; return ;;
+  esac
+  st=$(cd "$PKG_ABS" && run_with_timeout "$T_AUDIT" "$TOOLS_DIR/audit.json" "${SCRUB[@]}" "${cmd[@]}")
+  case $st in
+    TIMEOUT) summary audit "UNAVAILABLE(timeout)" "${T_AUDIT}s"; return ;;
+    MISSING) summary audit "UNAVAILABLE(missing)" "$PM not on PATH"; return ;;
+  esac
+  if ! jq -e 'type == "object" and (has("vulnerabilities") or has("advisories"))' "$TOOLS_DIR/audit.json" >/dev/null 2>&1; then
+    summary audit "UNAVAILABLE(run-error)" "$(head -c 120 "$TOOLS_DIR/audit.json" | tr '\n\t' '  ')"; return
+  fi
+  if [[ -n "$LOCKFILE" && -f "$REPO/$LOCKFILE" ]]; then
+    head_lock="$REPO/$LOCKFILE"
+    if git -C "$REPO" show "$MB:$LOCKFILE" > "$TOOLS_DIR/lock-base" 2>/dev/null; then base_lock="$TOOLS_DIR/lock-base"; fi
+  fi
+  line=$(bash "$HERE/audit-report.sh" "$PM" "$TOOLS_DIR/audit.json" "$head_lock" "$base_lock" "$TOOLS_DIR/audit-new.tsv") || { summary audit "UNAVAILABLE(run-error)" "audit-report.sh failed"; return; }
+  [[ $MULTI -eq 1 ]] && cat "$TOOLS_DIR/audit-new.tsv" >> "$OUT/tools/audit-new.tsv"
+  hc=$(sed -E 's/.*\(([0-9]+) high\/critical\).*/\1/' <<<"$line")
+  if [[ "$hc" -gt 0 ]]; then summary audit FAIL "$line (registry queried)"; else summary audit OK "$line (registry queried)"; fi
+}
+
 if [[ $MULTI -eq 1 ]]; then
   : > "$OUT/tools/typecheck-new.txt"; : > "$OUT/tools/metrics.tsv"; : > "$OUT/tools/metrics-preexisting.tsv"; echo '[]' > "$OUT/tools/lint-changed.json"
-  : > "$OUT/tools/test-classified.txt"; : > "$OUT/tools/coverage-changed.txt"
+  : > "$OUT/tools/test-classified.txt"; : > "$OUT/tools/coverage-changed.txt"; : > "$OUT/tools/audit-new.tsv"
 fi
 for PKG in "${PKG_LIST[@]}"; do
   PKG_ABS=$(cd "$REPO/$PKG" && pwd -P)
@@ -483,5 +514,5 @@ for PKG in "${PKG_LIST[@]}"; do
   run_lint
   run_metrics
   run_test
-  summary audit "UNAVAILABLE(not-implemented)" ""
+  run_audit
 done
