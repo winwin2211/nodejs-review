@@ -106,6 +106,20 @@ r=$(ASSERT_CLEAN_PRUNE=node_modules bash "$S/assert-clean.sh" --repo "$fx/ts" --
 assert_eq "No artifacts left: verified" "$r" "ts: incremental tsc left no .tsbuildinfo in the repo"
 assert_contains "$(cat "$out/d/tools/summary.txt" 2>/dev/null; bash "$S/collect.sh" --repo "$fx/dirty" --base main --head feature/NR-100-orders --out "$out/d2" >/dev/null; cat "$out/d2/tools/summary.txt")" $'typecheck\tUNAVAILABLE(not-typescript)' "dirty: no TypeScript, no typecheck"
 
+# one changed package that is not the root: typecheck-new.txt is repo-relative like every other output
+sp=$(tmpdir); git -C "$sp" init -q -b main
+echo '{ "name": "sp", "workspaces": ["packages/*"], "devDependencies": { "typescript": "5" } }' > "$sp/package.json"
+: > "$sp/package-lock.json"; printf 'node_modules\n' > "$sp/.gitignore"; mkdir -p "$sp/node_modules/.bin" "$sp/packages/api/src"
+printf '#!/bin/sh\ncase " $* " in *" --showConfig "*) echo "{\\"compilerOptions\\":{}}"; exit 0 ;; esac\ncase "$PWD" in */base/*) exit 0 ;; esac\necho "src/x.ts(1,14): error TS2322: canned"\nexit 2\n' > "$sp/node_modules/.bin/tsc"
+chmod +x "$sp/node_modules/.bin/tsc"
+echo '{ "name": "api" }' > "$sp/packages/api/package.json"; echo '{}' > "$sp/packages/api/tsconfig.json"
+printf 'export const x: number = 1;\n' > "$sp/packages/api/src/x.ts"
+git -C "$sp" -c user.email=f@e -c user.name=f add -A; git -C "$sp" -c user.email=f@e -c user.name=f commit -q -m base
+printf 'export const x: number = 2;\n' > "$sp/packages/api/src/x.ts"
+bash "$S/collect.sh" --repo "$sp" --base main --head WORKTREE --out "$out/sp" >/dev/null 2>&1
+assert_contains "$(cat "$out/sp/tools/summary.txt")" $'typecheck\tFAIL\t1 new' "single package: the head-only error is new"
+assert_eq "packages/api/src/x.ts(1,14): error TS2322: canned" "$(cat "$out/sp/tools/typecheck-new.txt")" "single non-root package: typecheck-new.txt is repo-relative"
+
 # tsc that checked nothing is never `typecheck OK`: a global error (TS18003, no
 # file prefix) and a solution-style tsconfig (only references) are UNAVAILABLE
 for kind in global solution; do

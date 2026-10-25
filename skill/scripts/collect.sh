@@ -362,9 +362,11 @@ run_typecheck() {
       if [[ $stb == TIMEOUT ]]; then note=", no-baseline(timeout)"; else base_file="$TOOLS_DIR/typecheck-base.txt"; fi
     fi
   fi
-  bash "$HERE/typecheck-diff.sh" "$TOOLS_DIR/typecheck.txt" "$base_file" > "$TOOLS_DIR/typecheck-new.txt"
+  # tsc prints paths relative to the package; typecheck-new.txt is repo-relative like every other output
+  local prefix=""; [[ "$PKG" != "." ]] && prefix="$PKG/"
+  bash "$HERE/typecheck-diff.sh" "$TOOLS_DIR/typecheck.txt" "$base_file" | sed "s#^#$prefix#" > "$TOOLS_DIR/typecheck-new.txt"
   local n_head n_new; n_head=$(count_ts_errors "$TOOLS_DIR/typecheck.txt"); n_new=$(grep -c . "$TOOLS_DIR/typecheck-new.txt" || true)
-  [[ $MULTI -eq 1 ]] && sed "s#^#$PKG/#" "$TOOLS_DIR/typecheck-new.txt" >> "$OUT/tools/typecheck-new.txt"
+  [[ $MULTI -eq 1 ]] && cat "$TOOLS_DIR/typecheck-new.txt" >> "$OUT/tools/typecheck-new.txt"
   local status=OK; [[ $n_new -gt 0 ]] && status=FAIL
   summary typecheck "$status" "$n_new new, $((n_head - n_new)) pre-existing$note"
 }
