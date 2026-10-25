@@ -322,7 +322,88 @@ run_typecheck() {
   summary typecheck "$status" "$n_new new, $((n_head - n_new)) pre-existing$note"
 }
 
-[[ $MULTI -eq 1 ]] && : > "$OUT/tools/typecheck-new.txt"
+TOOLBELT="$HERE/../toolbelt"
+# pkg_files LIST... -> the listed repo-relative paths that belong to PKG, made relative to it
+pkg_files() {
+  local f
+  cat "$@" | while read -r f; do
+    [[ -n "$f" ]] || continue
+    if [[ "$PKG" == "." ]]; then echo "$f"; elif [[ "$f" == "$PKG/"* ]]; then echo "${f#"$PKG"/}"; fi
+  done
+}
+run_lint() {
+  local files=() f bin cfg=() suffix="" st n
+  while IFS= read -r f; do files+=("$f"); done < <(pkg_files "$OUT/changed-src-files.txt" "$OUT/changed-test-files.txt")
+  [[ ${#files[@]} -gt 0 ]] || { summary lint "UNAVAILABLE(no-changed-files)" ""; return; }
+  case "$LINTER" in
+    eslint|biome)
+      [[ "$NODE_MODULES" != absent ]] || { summary lint "UNAVAILABLE($NM_REASON)" "$NM_HINT"; return; }
+      bin=$(find_bin "$LINTER" "$PKG")
+      [[ -n "$bin" ]] || { summary lint "UNAVAILABLE(no-linter-binary)" "$LINTER not in node_modules/.bin"; return; }
+      ;;
+    *)
+      bin="$TOOLBELT/node_modules/.bin/eslint"; cfg=(--no-config-lookup -c "$TOOLBELT/eslint.strict.config.js"); suffix=" (strict fallback)"
+      [[ -x "$bin" ]] || { summary lint "UNAVAILABLE(no-toolbelt)" "bash install.sh --toolbelt-only"; return; }
+      ;;
+  esac
+  if [[ "$LINTER" == biome ]]; then
+    # Biome's JSON carries byte spans, not lines: kept whole as evidence, never hunk-filtered.
+    st=$(cd "$PKG_ABS" && run_with_timeout "$T_LINT" "$TOOLS_DIR/lint.json" "$bin" lint --reporter=json "${files[@]}")
+    case $st in TIMEOUT) summary lint "UNAVAILABLE(timeout)" "${T_LINT}s"; return ;; MISSING) summary lint "UNAVAILABLE(missing)" ""; return ;; esac
+    n=$(jq '.diagnostics | length' "$TOOLS_DIR/lint.json" 2>/dev/null || echo "?")
+    if [[ $st == OK ]]; then summary lint OK "$n diagnostics (biome, unfiltered)"; else summary lint FAIL "$n diagnostics (biome, unfiltered)"; fi
+    return
+  fi
+  st=$(cd "$PKG_ABS" && run_with_timeout "$T_LINT" "$TOOLS_DIR/lint.txt" "$bin" ${cfg[@]+"${cfg[@]}"} -f json -o "$TOOLS_DIR/lint.json" "${files[@]}")
+  case $st in TIMEOUT) summary lint "UNAVAILABLE(timeout)" "${T_LINT}s"; return ;; MISSING) summary lint "UNAVAILABLE(missing)" ""; return ;; esac
+  [[ -f "$TOOLS_DIR/lint.json" ]] || { summary lint "UNAVAILABLE(lint-error)" "$(head -1 "$TOOLS_DIR/lint.txt" | cut -c1-120)"; return; }
+  n=$(bash "$HERE/lint-changed.sh" "$TOOLS_DIR/lint.json" "$OUT/added-lines.tsv" "$REPO" "$TOOLS_DIR/lint-changed.json")
+  if [[ $MULTI -eq 1 ]]; then
+    jq -s 'add' "$OUT/tools/lint-changed.json" "$TOOLS_DIR/lint-changed.json" > "$OUT/tools/.lc" && mv "$OUT/tools/.lc" "$OUT/tools/lint-changed.json"
+  fi
+  if [[ "$n" -gt 0 ]]; then summary lint FAIL "$n new$suffix"; else summary lint OK "0 new$suffix"; fi
+}
+run_metrics() {
+  local files=() f bin="$TOOLBELT/node_modules/.bin/eslint" cfg="$TOOLBELT/eslint.metrics.config.js" st
+  [[ -x "$bin" ]] || { summary metrics "UNAVAILABLE(no-toolbelt)" "bash install.sh --toolbelt-only"; return; }
+  while IFS= read -r f; do files+=("$f"); done < <(pkg_files "$OUT/changed-src-files.txt")
+  [[ ${#files[@]} -gt 0 ]] || { summary metrics "UNAVAILABLE(no-changed-files)" ""; return; }
+  local s0=$SECONDS
+  st=$(cd "$PKG_ABS" && run_with_timeout "$T_METRICS" "$TOOLS_DIR/metrics.txt" "$bin" --no-config-lookup -c "$cfg" -f json -o "$TOOLS_DIR/metrics.json" "${files[@]}")
+  case $st in TIMEOUT) summary metrics "UNAVAILABLE(timeout)" "${T_METRICS}s"; return ;; MISSING) summary metrics "UNAVAILABLE(missing)" ""; return ;; esac
+  [[ -f "$TOOLS_DIR/metrics.json" ]] || { summary metrics "UNAVAILABLE(metrics-error)" "$(head -1 "$TOOLS_DIR/metrics.txt" | cut -c1-120)"; return; }
+  # baseline: the same files as they exist at the merge-base
+  local base_json="-" base_root="-" note="" budget
+  if [[ -n "$BASELINE" ]]; then note=", no-baseline($BASELINE)"
+  elif [[ -d "$BASE_WT/$PKG" ]]; then
+    local bfiles=()
+    for f in "${files[@]}"; do [[ -f "$BASE_WT/$PKG/$f" ]] && bfiles+=("$f"); done
+    if [[ ${#bfiles[@]} -eq 0 ]]; then
+      echo '[]' > "$TOOLS_DIR/metrics-base.json"; base_json="$TOOLS_DIR/metrics-base.json"; base_root="$BASE_WT"
+    else
+      budget=$((T_METRICS - (SECONDS - s0))); [[ $budget -lt 1 ]] && budget=1
+      local stb; stb=$(cd "$BASE_WT/$PKG" && run_with_timeout "$budget" "$TOOLS_DIR/metrics-base.txt" "$bin" --no-config-lookup -c "$cfg" -f json -o "$TOOLS_DIR/metrics-base.json" "${bfiles[@]}")
+      if [[ $stb == TIMEOUT || ! -f "$TOOLS_DIR/metrics-base.json" ]]; then note=", no-baseline(timeout)"; else base_json="$TOOLS_DIR/metrics-base.json"; base_root="$BASE_WT"; fi
+    fi
+  else note=", no-baseline(new-package)"; fi
+  # duplication across the whole package, filtered to clones touching added lines
+  local jscpd="$TOOLBELT/node_modules/.bin/jscpd" dup="-"
+  if [[ -x "$jscpd" ]]; then
+    budget=$((T_METRICS - (SECONDS - s0))); [[ $budget -lt 1 ]] && budget=1
+    (cd "$PKG_ABS" && run_with_timeout "$budget" "$TOOLS_DIR/jscpd.txt" "$jscpd" -c "$TOOLBELT/jscpd.json" -o "$TOOLS_DIR/jscpd" --silent . >/dev/null) || true
+    [[ -f "$TOOLS_DIR/jscpd/jscpd-report.json" ]] && dup="$TOOLS_DIR/jscpd/jscpd-report.json"
+  fi
+  local line; line=$(bash "$HERE/metrics-report.sh" "$TOOLS_DIR/metrics.json" "$REPO" "$base_json" "$base_root" "$dup" "$OUT/added-lines.tsv" "$TOOLS_DIR")
+  if [[ $MULTI -eq 1 ]]; then
+    cat "$TOOLS_DIR/metrics.tsv" >> "$OUT/tools/metrics.tsv"; cat "$TOOLS_DIR/metrics-preexisting.tsv" >> "$OUT/tools/metrics-preexisting.tsv"
+  fi
+  local n=${line%% *}
+  if [[ "$n" -gt 0 ]]; then summary metrics FAIL "$line$note"; else summary metrics OK "$line$note"; fi
+}
+
+if [[ $MULTI -eq 1 ]]; then
+  : > "$OUT/tools/typecheck-new.txt"; : > "$OUT/tools/metrics.tsv"; : > "$OUT/tools/metrics-preexisting.tsv"; echo '[]' > "$OUT/tools/lint-changed.json"
+fi
 for PKG in "${PKG_LIST[@]}"; do
   PKG_ABS=$(cd "$REPO/$PKG" && pwd -P)
   if [[ $MULTI -eq 1 ]]; then
@@ -334,5 +415,7 @@ for PKG in "${PKG_LIST[@]}"; do
   fi
   mkdir -p "$TOOLS_DIR"
   run_typecheck
-  for t in lint metrics test coverage audit; do summary "$t" "UNAVAILABLE(not-implemented)" ""; done
+  run_lint
+  run_metrics
+  for t in test coverage audit; do summary "$t" "UNAVAILABLE(not-implemented)" ""; done
 done

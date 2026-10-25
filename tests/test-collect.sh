@@ -169,6 +169,26 @@ r=$(bash "$S/collect.sh" --repo "$noinst" --base main --head WORKTREE --out "$ou
 assert_contains "$r" "refusing to install into the reviewed checkout" "install: refused when --repo is the checkout"
 [[ -e "$noinst/node_modules" ]] && fail "install: nothing installed into the checkout" || pass
 
+# --- Task 9: lint (strict fallback on dirty), metrics and duplication on the fixtures ---
+bash "$S/collect.sh" --repo "$fx/dirty" --base main --head feature/NR-100-orders --out "$out/d9"
+s9=$(cat "$out/d9/tools/summary.txt")
+assert_contains "$s9" $'lint\t' "dirty: lint row present"
+assert_contains "$(grep $'^lint\t' "$out/d9/tools/summary.txt")" "(strict fallback)" "dirty: no linter -> toolbelt strict config"
+assert_file "$out/d9/tools/lint.json" "dirty: lint json kept as evidence"
+assert_file "$out/d9/tools/lint-changed.json" "dirty: hunk-filtered lint json"
+assert_contains "$s9" $'metrics\tFAIL' "dirty: metrics over threshold"
+m9="$out/d9/tools/metrics.tsv"
+assert_file "$m9" "dirty: metrics.tsv"
+assert_contains "$(awk -F'\t' '$3 == "sonarjs/cognitive-complexity" { print $1 ":" $7 ":" $6 }' "$m9")" "src/services/order_service.js:placeOrder:MAJOR" "dirty: placeOrder cognitive complexity is a MAJOR row"
+assert_contains "$(awk -F'\t' '$3 == "duplication" { print $1 " " $7 }' "$m9")" "legacy_order_service.js" "dirty: the copied discount block is a duplication row"
+assert_contains "$(awk -F'\t' '$3 == "max-depth" { print $1 }' "$m9")" "src/services/order_service.js" "dirty: nesting depth row"
+assert_file "$out/d9/tools/metrics-base.json" "dirty: metrics ran at the merge-base too"
+assert_eq "" "$(git -C "$fx/dirty" status --porcelain --ignored | grep -v node_modules || true)" "dirty: repo untouched by lint/metrics"
+r=$(ASSERT_CLEAN_PRUNE=node_modules bash "$S/assert-clean.sh" --repo "$fx/dirty" --out "$out/d9"); assert_eq "No artifacts left: verified" "$r" "dirty: no artifacts after lint/metrics"
+bash "$S/collect.sh" --repo "$fx/clean" --base main --head feature/NR-100-orders --out "$out/c9"
+assert_contains "$(cat "$out/c9/tools/summary.txt")" $'metrics\tOK' "clean: metrics within thresholds"
+assert_eq "" "$(cat "$out/c9/tools/metrics.tsv")" "clean: no metric rows"
+
 # --- not a Node.js repo ---
 nn=$(tmpdir); git -C "$nn" init -q -b main; echo hi > "$nn/README.md"
 git -C "$nn" -c user.email=f@e -c user.name=f add -A; git -C "$nn" -c user.email=f@e -c user.name=f commit -q -m base
