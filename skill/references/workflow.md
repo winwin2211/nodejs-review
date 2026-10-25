@@ -47,6 +47,12 @@ as `find-specs.sh --base`. Read `$WORK/stack.env`, `$WORK/meta.env` and
 `$WORK/tools/summary.txt`; print one progress line: the Stack line and the
 tool statuses (format in `references/report-format.md`).
 
+`stack.env` and `meta.env` carry values copied from the repo's
+`package.json` (an engines range such as `>=22`, a name with `$(...)`).
+Never source or `eval` them: read one key at a time as text, for example
+`sed -n 's/^BASE=//p' "$WORK/meta.env"`, and quote the value wherever you
+use it.
+
 If `stack.env` has `PACKAGES_OVERFLOW=1`, tell the user which packages
 changed and that the tools ran on the first four only; suggest `--package`.
 
