@@ -302,6 +302,29 @@ bash "$S/collect.sh" --repo "$ej" --base main --head WORKTREE --out "$out/ej" --
 assert_eq "" "$(ls -A "$elsewhere")" "a key injected through package.json does not redirect collect's output"
 assert_file "$out/ej/meta.env" "collect writes meta.env to its own --out"
 
+# --- the diff is parsed the same whatever the user's git config, and paths may hold spaces or non-ASCII ---
+gc=$(tmpdir); git -C "$gc" init -q -b main
+git -C "$gc" config user.email f@e; git -C "$gc" config user.name f
+mkdir -p "$gc/src"; echo '{ "name": "gc", "type": "module" }' > "$gc/package.json"
+printf 'export const a = 1;\n' > "$gc/src/a.js"; printf 'export const o = 1;\nexport const p = 2;\n' > "$gc/src/old.js"
+git -C "$gc" add -A; git -C "$gc" commit -q -m base; git -C "$gc" checkout -q -b feature/x
+printf 'let count = 0;\n++ count;\n' > "$gc/src/my file.js"; printf 'export const c = 1;\n' > "$gc/src/café.js"
+git -C "$gc" rm -q src/old.js; git -C "$gc" add -A; git -C "$gc" commit -q -m change
+printf 'export const a = 1;\nexport const b = 2;\n' > "$gc/src/a.js"; printf 'export const n = 1;\n' > "$gc/src/new one.js"
+printf '#!/bin/sh\necho EXTERNAL DIFF TOOL OUTPUT\n' > "$gc.ext"; chmod +x "$gc.ext"
+git -C "$gc" config diff.mnemonicPrefix true; git -C "$gc" config color.ui always; git -C "$gc" config diff.external "$gc.ext"
+bash "$S/collect.sh" --repo "$gc" --base main --head WORKTREE --out "$out/gc" --no-tools >/dev/null 2>&1
+al=$(cat "$out/gc/added-lines.tsv")
+assert_contains "$al" $'src/a.js\t2' "git config: an added line in a modified file"
+assert_contains "$al" $'src/my file.js\t1' "git config: a path with a space"
+assert_contains "$al" $'src/my file.js\t2' "git config: an added line starting with ++ is content, not a header"
+assert_contains "$al" $'src/café.js\t1' "git config: a non-ASCII path"
+assert_contains "$al" $'src/new one.js\t1' "git config: an untracked file with a space"
+assert_eq "5" "$(grep -c . "$out/gc/added-lines.tsv")" "git config: exactly the five added lines"
+assert_eq "7" "$(cat "$out/gc/nontest-lines.txt")" "git config: added and removed source lines counted"
+assert_eq $'src/a.js\nsrc/café.js\nsrc/my file.js\nsrc/new one.js\nsrc/old.js' "$(cat "$out/gc/changed-files.txt")" "git config: changed files unquoted, deleted file listed"
+assert_not_contains "$(cat "$out/gc/diff.patch")" "EXTERNAL DIFF TOOL" "git config: diff.external is not used"
+
 # --- the repo's own linter loads repo code (eslint.config.js): it runs in the scrubbed env too ---
 for lt in eslint biome; do
   lr=$(tmpdir); envdump="$lr.env"; git -C "$lr" init -q -b main

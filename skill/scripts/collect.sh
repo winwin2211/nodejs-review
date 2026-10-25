@@ -94,15 +94,20 @@ fi
 MB=$(merge_base "$REPO" "$BASE" "$HEAD_SHA")
 
 # --- diff ---
+# The parsers below read git's default patch shape. Pin it against the user's
+# config: color, an external diff tool, mnemonic or no prefixes, quoted
+# non-ASCII paths and suppressed blank context would each empty or skew them.
+GIT=(git -C "$REPO" -c core.quotePath=false -c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.suppressBlankEmpty=false)
+DIFF=(diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/)
 if [[ "$MODE" == "worktree" ]]; then
-  git -C "$REPO" diff "$MB" > "$OUT/diff.patch"
-  git -C "$REPO" ls-files --others --exclude-standard | while read -r f; do
-    git -C "$REPO" diff --no-index -- /dev/null "$f" >> "$OUT/diff.patch" || true
+  "${GIT[@]}" "${DIFF[@]}" "$MB" > "$OUT/diff.patch"
+  "${GIT[@]}" ls-files --others --exclude-standard | while IFS= read -r f; do
+    "${GIT[@]}" "${DIFF[@]}" --no-index -- /dev/null "$f" >> "$OUT/diff.patch" || true
   done
-  { git -C "$REPO" diff --name-only "$MB"; git -C "$REPO" ls-files --others --exclude-standard; } | sort -u > "$OUT/changed-files.txt"
+  { "${GIT[@]}" diff --name-only "$MB"; "${GIT[@]}" ls-files --others --exclude-standard; } | sort -u > "$OUT/changed-files.txt"
 else
-  git -C "$REPO" diff "$MB" "$HEAD_SHA" > "$OUT/diff.patch"
-  git -C "$REPO" diff --name-only "$MB" "$HEAD_SHA" | sort -u > "$OUT/changed-files.txt"
+  "${GIT[@]}" "${DIFF[@]}" "$MB" "$HEAD_SHA" > "$OUT/diff.patch"
+  "${GIT[@]}" diff --name-only "$MB" "$HEAD_SHA" | sort -u > "$OUT/changed-files.txt"
 fi
 
 # --- file classes: source vs test, existing files only (a deleted path is not reviewable code) ---
@@ -121,11 +126,16 @@ while read -r f; do
   if is_test_path "$f"; then echo "$f" >> "$OUT/changed-test-files.txt"; else echo "$f" >> "$OUT/changed-src-files.txt"; fi
 done < "$OUT/changed-files.txt"
 
-# every added line as file<TAB>line (new-file numbering), for hunk filtering
+# every added line as file<TAB>line (new-file numbering), for hunk filtering.
+# `---`/`+++` are headers only between `diff --git` and the first `@@`: inside
+# a hunk they are content (a removed `-- comment`, an added `++ i`). Git ends
+# a header path that holds a space with a tab.
 awk '
-  /^\+\+\+ / { f = $2; if (f == "/dev/null") { f = "" } else { sub(/^b\//, "", f) } next }
-  /^@@ / { s = $3; sub(/^\+/, "", s); split(s, parts, ","); line = parts[1] + 0; next }
-  /^\\/ { next }
+  function hpath(s) { s = substr(s, 5); sub(/\t$/, "", s); return s }
+  /^diff --git / { hdr = 1; f = ""; next }
+  hdr && /^\+\+\+ / { f = hpath($0); if (f == "/dev/null") f = ""; else sub(/^b\//, "", f); next }
+  /^@@ / { hdr = 0; s = $3; sub(/^\+/, "", s); split(s, parts, ","); line = parts[1] + 0; next }
+  hdr || /^\\/ { next }
   f != "" && /^\+/ { print f "\t" line; line++; next }
   f != "" && /^-/ { next }
   f != "" && /^ / { line++ }
@@ -155,18 +165,17 @@ head_file() { # path -> head content on stdout
   rm -f "$OUT/.decls" "$OUT/.lines"
 } | sort -u > "$OUT/changed-symbols.txt"
 
-# added+removed lines of non-test source files (a deleted file's removed lines count;
-# an untracked file is diffed as `a//dev/null` vs `b/<path>`, so the path is $4 there)
+# added+removed lines of non-test source files (a deleted file's removed lines
+# count: its path is on the `---` header when `+++` is /dev/null)
 awk '
   function is_test(p) { return (p ~ /\.(test|spec|stories)\./ || p ~ /(^|\/)(__tests__|__mocks__|test|tests)\//) }
   function is_src(p) { return (p ~ /\.(ts|tsx|js|mjs|cjs|mts|cts|jsx)$/) }
-  /^diff --git/ {
-    a = $3; b = $4;
-    path = (a == "a//dev/null") ? b : b;
-    sub(/^[ab]\//, "", path);
-    count_this = (is_src(path) && !is_test(path));
-  }
-  /^[+-]/ && !/^(\+\+\+|---)/ { if (count_this) n++ }
+  function hpath(s) { s = substr(s, 5); sub(/\t$/, "", s); return s }
+  /^diff --git / { hdr = 1; count_this = 0; old = ""; next }
+  hdr && /^--- / { old = hpath($0); sub(/^a\//, "", old); next }
+  hdr && /^\+\+\+ / { p = hpath($0); if (p == "/dev/null") p = old; else sub(/^b\//, "", p); count_this = (is_src(p) && !is_test(p)); next }
+  /^@@ / { hdr = 0; next }
+  !hdr && /^[+-]/ { if (count_this) n++ }
   END { print n+0 }
 ' "$OUT/diff.patch" > "$OUT/nontest-lines.txt"
 
