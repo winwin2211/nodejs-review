@@ -50,6 +50,7 @@ grep -q '^CLEAN CODE' "$R/report-format.md" && pass || fail "report has the CLEA
 grep -q 'Changed lines covered' "$R/report-format.md" && pass || fail "report has changed-line coverage"
 grep -q 'NO_RECORD' "$R/tooling.md" && pass || fail "tooling explains NO_RECORD coverage rows"
 grep -q 'function column is `-`' "$R/workflow.md" && pass || fail "workflow titles statement-level metric rows without a function"
+grep -q 'duplication <lines> lines' "$R/workflow.md" && pass || fail "workflow titles duplication rows by the other side, not a function"
 grep -q 'NO_RECORD' "$R/checklist-sdd-tdd.md" && pass || fail "sdd-tdd treats a file no test loaded as unexecuted"
 grep -q 'not loaded by any test' "$R/report-format.md" && pass || fail "report names changed files no test loaded"
 grep -q 'scrubbed env' "$R/report-format.md" && pass || fail "report names the scrubbed environment"

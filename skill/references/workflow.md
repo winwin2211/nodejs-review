@@ -108,7 +108,8 @@ Rule-based findings from `$WORK/tools` (see `references/tooling.md`, section
   findings; they appear in the Tools line only.
 - `metrics.tsv`: one finding per row, dimension `clean-code`, severity from
   column 6, title `<metric> <value> (threshold <threshold>) in <function>`
-  (drop ` in <function>` when the function column is `-`, a statement-level rule),
+  (drop ` in <function>` when the function column is `-`, a statement-level rule;
+  a `duplication` row is titled `duplication <lines> lines (threshold 10) <-> <other file:line>`),
   except `no-magic-numbers` rows, which you aggregate into one MINOR finding
   per file listing the values and lines (constant tables produce many rows).
 - `audit-new.tsv` rows marked `introduced` with severity `high` or
