@@ -118,7 +118,9 @@ from that scan (tool caches such as `node_modules/.vite` live there and are
 not source); `git status --ignored` still covers everything else. Outside
 the guarantee: `.git` internal writes made by `git fetch` or worktree
 add/remove, and a write that restores the file's previous mtime. A file the
-user edits while the review runs is also listed; the banner says so.
+user edits while the review runs is also listed; the banner says so. Every
+worktree the skill creates is added with `-c core.hooksPath=/dev/null`, so no
+git hook (husky's included) runs during the review.
 
 ## Timeouts
 

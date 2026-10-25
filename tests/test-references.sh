@@ -71,5 +71,6 @@ grep -q 'REVIEW_TOOL=nodejs-review' "$R/tooling.md" && pass || fail "tooling set
 # gitlab.md is go-review's with our name
 grep -q 'nodejs-review' "$R/gitlab.md" && pass || fail "gitlab.md names nodejs-review"
 grep -q 'go-review' "$R/gitlab.md" && fail "gitlab.md still says go-review" || pass
+grep 'worktree add' "$R/gitlab.md" | grep -q 'core.hooksPath=/dev/null' && pass || fail "gitlab.md creates the MR worktree with repository hooks disabled"
 
 finish

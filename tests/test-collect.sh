@@ -292,6 +292,18 @@ assert_eq "" "$(git -C "$ev" status --porcelain --ignored | grep -v ' a.js$')" "
 assert_eq ">=22.12.0 \$(touch $canary)" "$(val "$out/ev/stack.env" ENGINES)" "engines recorded verbatim in stack.env"
 assert_eq "ev" "$(val "$out/ev/meta.env" PKG_NAME)" "collect still reads stack.env and finishes"
 
+# --- the merge-base worktree runs no repository hook (husky sets core.hooksPath to a tracked dir) ---
+hk=$(tmpdir); hcanary="$hk.hook-ran"; git -C "$hk" init -q -b main
+git -C "$hk" config user.email f@e; git -C "$hk" config user.name f; git -C "$hk" config core.hooksPath .husky
+mkdir -p "$hk/.husky"; printf '#!/bin/sh\ntouch "%s"\n' "$hcanary" > "$hk/.husky/post-checkout"; chmod +x "$hk/.husky/post-checkout"
+echo '{ "name": "hk", "type": "module" }' > "$hk/package.json"; printf 'export const a = 1;\n' > "$hk/a.js"
+git -C "$hk" add -A; git -C "$hk" commit -q -m base
+rm -f "$hcanary"; git -C "$hk" checkout -q -b feature/x; rm -f "$hcanary"
+printf 'export const a = 2;\n' > "$hk/a.js"; git -C "$hk" commit -q -am change
+bash "$S/collect.sh" --repo "$hk" --base main --head feature/x --out "$out/hk" >/dev/null 2>&1
+[[ -e "$hcanary" ]] && fail "creating the merge-base worktree ran the repo's post-checkout hook" || pass
+assert_contains "$(cat "$out/hk/tools/summary.txt")" $'metrics\t' "hook repo: collect still ran the tools"
+
 # --- not a Node.js repo ---
 nn=$(tmpdir); git -C "$nn" init -q -b main; echo hi > "$nn/README.md"
 git -C "$nn" -c user.email=f@e -c user.name=f add -A; git -C "$nn" -c user.email=f@e -c user.name=f commit -q -m base

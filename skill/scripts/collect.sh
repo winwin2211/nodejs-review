@@ -271,7 +271,8 @@ cleanup_base() {
   git -C "$REPO" worktree remove --force "$BASE_WT" >/dev/null 2>&1 || rm -rf "$BASE_WT"
   git -C "$REPO" worktree prune >/dev/null 2>&1 || true
 }
-if git -C "$REPO" worktree add -q --detach "$BASE_WT" "$MB" 2>"$OUT/tools/base-worktree.txt"; then
+# hooksPath=/dev/null: a checkout runs post-checkout, and husky points hooks at a tracked directory
+if git -C "$REPO" -c core.hooksPath=/dev/null worktree add -q --detach "$BASE_WT" "$MB" 2>"$OUT/tools/base-worktree.txt"; then
   trap cleanup_base EXIT
   if [[ "$NODE_MODULES" != absent ]] && deps_identical "$REPO" "$BASE_WT"; then
     link_node_modules "$REPO" "$BASE_WT"
