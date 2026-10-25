@@ -48,6 +48,9 @@ grep -q 'clean-code' "$R/severity-verdict.md" && pass || fail "severity lists th
 # report format: the two new blocks and the tools line rules
 grep -q '^CLEAN CODE' "$R/report-format.md" && pass || fail "report has the CLEAN CODE block"
 grep -q 'Changed lines covered' "$R/report-format.md" && pass || fail "report has changed-line coverage"
+grep -q 'NO_RECORD' "$R/tooling.md" && pass || fail "tooling explains NO_RECORD coverage rows"
+grep -q 'NO_RECORD' "$R/checklist-sdd-tdd.md" && pass || fail "sdd-tdd treats a file no test loaded as unexecuted"
+grep -q 'not loaded by any test' "$R/report-format.md" && pass || fail "report names changed files no test loaded"
 grep -q 'scrubbed env' "$R/report-format.md" && pass || fail "report names the scrubbed environment"
 
 # tooling: the prune variable, the forbidden list, budgets, the tools table

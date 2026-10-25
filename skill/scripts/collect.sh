@@ -459,10 +459,17 @@ run_test() {
   if [[ "$fl" -gt 0 ]]; then summary test FAIL "$detail"; else summary test OK "$detail"; fi
   if [[ -n "$cov_note" ]]; then summary coverage "UNAVAILABLE($cov_note)" "install @vitest/coverage-v8 in the repo"; return; fi
   [[ -f "$TOOLS_DIR/coverage/lcov.info" ]] || { summary coverage "UNAVAILABLE(no-lcov)" "runner wrote no lcov.info"; return; }
-  bash "$HERE/coverage-changed.sh" "$TOOLS_DIR/coverage/lcov.info" "$OUT/added-lines.tsv" "$REPO" "$PKG" > "$TOOLS_DIR/coverage-changed.txt"
-  local tot; tot=$(tail -1 "$TOOLS_DIR/coverage-changed.txt"); tot=${tot#TOTAL=}
+  # lines under test are this package's changed source files: not tests, not docs
+  awk -F'\t' -v pkg="$PKG" 'FILENAME == ARGV[1] { if (pkg == "." || index($0, pkg "/") == 1) src[$0] = 1; next } ($1 in src)' \
+    "$OUT/changed-src-files.txt" "$OUT/added-lines.tsv" > "$TOOLS_DIR/added-src.tsv"
+  bash "$HERE/coverage-changed.sh" "$TOOLS_DIR/coverage/lcov.info" "$TOOLS_DIR/added-src.tsv" "$REPO" "$PKG" > "$TOOLS_DIR/coverage-changed.txt"
+  local tot nr; tot=$(tail -1 "$TOOLS_DIR/coverage-changed.txt"); tot=${tot#TOTAL=}
+  nr=$(grep -c $'\tNO_RECORD$' "$TOOLS_DIR/coverage-changed.txt" || true)
   [[ $MULTI -eq 1 ]] && grep -v '^TOTAL=' "$TOOLS_DIR/coverage-changed.txt" >> "$OUT/tools/coverage-changed.txt"
-  summary coverage OK "$tot changed lines"
+  local detail="$tot changed lines"
+  [[ "$nr" -eq 1 ]] && detail+=", 1 changed file not loaded by any test"
+  [[ "$nr" -gt 1 ]] && detail+=", $nr changed files not loaded by any test"
+  summary coverage OK "$detail"
 }
 
 run_audit() {

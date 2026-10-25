@@ -199,11 +199,16 @@ assert_contains "$s10" $'coverage\tOK\t' "dirty: coverage collected"
 assert_file "$out/d9/tools/coverage/lcov.info" "dirty: lcov written under the work dir"
 assert_contains "$(cat "$out/d9/tools/coverage-changed.txt")" $'src/services/order_service.js\t' "dirty: changed-line coverage row for the service"
 [[ -e "$fx/dirty/coverage" ]] && fail "dirty: no coverage dir written into the repo" || pass
+cov9=$(grep -v '^TOTAL=' "$out/d9/tools/coverage-changed.txt")
+assert_not_contains "$cov9" "test/order_handler.test.js" "dirty: test files are not lines under test (no coverage row)"
+assert_contains "$cov9" $'src/services/legacy_order_service.js\t0\t0\t1-27\tNO_RECORD' "dirty: the file no test loads lists its added lines as unexecuted"
+assert_contains "$(grep $'^coverage\t' "$out/d9/tools/summary.txt")" "1 changed file not loaded by any test" "dirty: summary names the files no test loaded"
 c10=$(cat "$out/c9/tools/summary.txt")
 assert_contains "$c10" $'test\tOK\t' "clean: tests pass"
 assert_contains "$(grep $'^test\t' "$out/c9/tools/summary.txt")" "0 failing" "clean: zero failing"
 tot=$(tail -1 "$out/c9/tools/coverage-changed.txt"); tot=${tot#TOTAL=}
 [[ "${tot%%/*}" -gt 0 && "${tot%%/*}" == "${tot##*/}" ]] && pass || fail "clean: every changed line executed (got TOTAL=$tot)"
+assert_not_contains "$(cat "$out/c9/tools/coverage-changed.txt")" ".md"$'\t' "clean: spec and plan are not lines under test (no coverage row)"
 
 # a fake vitest without a coverage provider: tests still classified, coverage UNAVAILABLE(no-coverage-provider)
 fv=$(tmpdir)

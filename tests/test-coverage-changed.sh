@@ -46,8 +46,8 @@ assert_contains "$(cat "$d/out-pkg.txt")" $'packages/api/src/a.js\t1\t2\t4\tplac
 # a changed file with no lcov record is reported, not dropped
 printf 'src/a.js\t4\nsrc/untested.js\t1\nsrc/untested.js\t2\n' > "$d/added2.tsv"
 bash "$S/coverage-changed.sh" "$d/lcov.info" "$d/added2.tsv" "$repo" > "$d/out2.txt"
-assert_contains "$(cat "$d/out2.txt")" $'src/untested.js\t0\t0\t\tNO_RECORD' "file without a coverage record is listed as NO_RECORD"
-assert_eq "TOTAL=0/1" "$(tail -1 "$d/out2.txt")" "NO_RECORD files add nothing to the total"
+assert_contains "$(cat "$d/out2.txt")" $'src/untested.js\t0\t0\t1-2\tNO_RECORD' "file without a coverage record (no test loaded it) lists every added line as unexecuted"
+assert_eq "TOTAL=0/1" "$(tail -1 "$d/out2.txt")" "NO_RECORD files add nothing to the measured total"
 
 # a diff with no added lines (deleted files only)
 : > "$d/none.tsv"

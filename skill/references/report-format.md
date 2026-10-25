@@ -67,7 +67,8 @@ Tools line rules, one entry per row of `tools/summary.txt` in order
 - `metrics`: `N over`, or `OK` when 0.
 - `test`: `N pass, F failing, R not runnable locally (scrubbed env)`; omit
   the `R ...` part when R is 0.
-- `coverage`: `C/T changed lines` or `unavailable (<reason>)`.
+- `coverage`: `C/T changed lines`, plus `, N changed file(s) not loaded by any test`
+  when the summary detail has it, or `unavailable (<reason>)`.
 - `audit`: `OK`, `N introduced` on FAIL, `skipped (lockfile unchanged)`, or
   `unavailable (<reason>)`.
 - Any `UNAVAILABLE(reason)` shows as `<tool> unavailable (<reason>)`.
@@ -84,7 +85,8 @@ row and the longest `max-lines-per-function` row in `tools/metrics.tsv`
 Print `none over threshold` when `metrics.tsv` is empty.
 
 SDD/TDD block: `Changed lines covered` is `TOTAL=` from
-`tools/coverage-changed.txt` followed by the uncovered functions of its rows;
+`tools/coverage-changed.txt` followed by the uncovered functions of its rows,
+then `not loaded by any test: <file>, ...` for its `NO_RECORD` rows;
 print `coverage unavailable (<reason>)` when the coverage row is UNAVAILABLE.
 
 ## MR summary

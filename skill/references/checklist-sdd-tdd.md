@@ -121,9 +121,11 @@ Changed-line coverage: `tools/coverage-changed.txt` has, per changed file,
 `covered`, `total`, the uncovered ranges and the functions whose added
 executable lines were all unexecuted. Use it to confirm or refute matrix
 rows: a row mapped to a test whose function shows as uncovered is wrong. Put
-`TOTAL=` and the uncovered functions in the SDD block. When the coverage row
-is UNAVAILABLE, fall back to "changed non-trivial function without a test
-change" and say so.
+`TOTAL=` and the uncovered functions in the SDD block. A `NO_RECORD` row is
+a changed source file that no test loaded: every added line in it is
+unexecuted, so each changed non-trivial function in it counts as a function
+with zero changed lines executed. When the coverage row is UNAVAILABLE, fall
+back to "changed non-trivial function without a test change" and say so.
 
 ## Test quality
 

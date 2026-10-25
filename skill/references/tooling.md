@@ -57,7 +57,7 @@ Final no-artifact check (always run, even after errors):
 | `tools/metrics.tsv`, `metrics-preexisting.tsv` | `file line metric value threshold severity function origin`; the first is findings (`new`/`hunk`), the second was already over at the merge-base |
 | `tools/test.json` or `tools/test.txt` | runner report (Vitest/Jest JSON, node:test TAP) |
 | `tools/test-classified.txt` | `file<TAB>test<TAB>FAIL|NOT_RUNNABLE` for failing tests, then `PASS= FAIL= NOT_RUNNABLE= SKIP=` |
-| `tools/coverage/lcov.info`, `tools/coverage-changed.txt` | lcov from the runner; per changed file `covered total uncovered-ranges uncovered-functions`, then `TOTAL=c/t` |
+| `tools/coverage/lcov.info`, `tools/coverage-changed.txt` | lcov from the runner; per changed source file (tests and docs are not lines under test) `covered total uncovered-ranges uncovered-functions`, then `TOTAL=c/t`; a file no test loaded is `0 0 <its added lines> NO_RECORD` and is not in `TOTAL` |
 | `tools/audit.json`, `tools/audit-new.tsv` | raw audit; `package version severity advisory introduced|preexisting` |
 | `specs.tsv`, `specs-all.txt` | spec candidates as in go-review (`path<TAB>convention<TAB>signals`) |
 
@@ -76,7 +76,9 @@ Interpretation rules:
   severity in column 6 (`no-magic-numbers` rows aggregated per file).
   `metrics-preexisting.tsv` is informational.
 - `coverage`: `coverage-changed.txt` feeds the SDD/TDD rules; there is no
-  percentage threshold.
+  percentage threshold. A `NO_RECORD` row is a changed source file that no
+  test loaded: every added line in it is unexecuted, and the summary detail
+  counts these files (`, N changed file(s) not loaded by any test`).
 - `audit FAIL`: every `introduced` row with severity `high` or `critical` is
   a BLOCKER (dimension `security`, rule-based). `preexisting` rows go to the
   pre-existing list. The audit runs only when `package.json` or the lockfile

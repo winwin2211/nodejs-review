@@ -8,9 +8,10 @@
 # ranges look like `42-47,51`, and functions lists `name:start-end` for every
 # function whose added executable lines were all unexecuted (ranges come from
 # consecutive FN records; the last function runs to the end of the file). A
-# changed file with no SF record is `0 0 "" NO_RECORD` and adds nothing to the
-# final `TOTAL=covered/total` line. SF paths may be absolute, repo-relative,
-# or relative to PKG_DIR.
+# changed file with no SF record was loaded by no test: its row is `0 0
+# <every added line> NO_RECORD` and it adds nothing to the final
+# `TOTAL=covered/total` line, which counts measured lines only. SF paths may
+# be absolute, repo-relative, or relative to PKG_DIR.
 set -euo pipefail
 LCOV=${1:?usage: coverage-changed.sh LCOV ADDED.tsv REPO [PKG_DIR]}
 ADDED=${2:?}; ROOT=${3:?}; PKG=${4:-.}
@@ -42,7 +43,7 @@ awk -F'\t' -v root="$ROOT/" -v pkg="$PKG" -v addedf="$ADDED" '
     tc = 0; tt = 0
     for (k = 1; k <= nf; k++) {
       f = order[k]
-      if (!(f in rec)) { print f "\t0\t0\t\tNO_RECORD"; continue }
+      if (!(f in rec)) { nu = 0; delete unc; for (i = 1; i <= na[f]; i++) unc[++nu] = add[f, i]; sortnum(unc, nu); print f "\t0\t0\t" ranges(unc, nu) "\tNO_RECORD"; continue }
       cov = 0; tot = 0; nu = 0; delete unc
       for (i = 1; i <= na[f]; i++) { L = add[f, i]; if ((f SUBSEP L) in hasda) { tot++; if (da[f, L] > 0) cov++; else unc[++nu] = L } }
       sortnum(unc, nu)
