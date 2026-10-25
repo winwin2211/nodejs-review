@@ -80,6 +80,22 @@ rc=0; bash "$S/collect.sh" --repo "$fx/dirty" --base no-such-branch-xyz --head W
 assert_file "$bad/status-before.txt" "baseline written before merge-base can fail"
 assert_file "$bad/mtime-marker" "mtime marker written before merge-base can fail"
 
+# --- Task 7: tool resolution, scrubbed environment, budgets, slugs (via --fn dispatch) ---
+ws=$(tmpdir)
+mkdir -p "$ws/node_modules/.bin" "$ws/packages/api/src" "$ws/packages/web/node_modules/.bin"
+echo '{"name":"ws","workspaces":["packages/*"]}' > "$ws/package.json"
+printf '#!/bin/sh\necho root-eslint\n' > "$ws/node_modules/.bin/eslint"; chmod +x "$ws/node_modules/.bin/eslint"
+printf '#!/bin/sh\necho web-eslint\n' > "$ws/packages/web/node_modules/.bin/eslint"; chmod +x "$ws/packages/web/node_modules/.bin/eslint"
+assert_eq "$ws/node_modules/.bin/eslint" "$(bash "$S/collect.sh" --repo "$ws" --fn find_bin eslint packages/api)" "find_bin walks up to the workspace root"
+assert_eq "$ws/packages/web/node_modules/.bin/eslint" "$(bash "$S/collect.sh" --repo "$ws" --fn find_bin eslint packages/web)" "find_bin prefers the package's own binary"
+assert_eq "" "$(bash "$S/collect.sh" --repo "$ws" --fn find_bin tsc packages/api)" "find_bin prints nothing when the binary is absent"
+assert_eq "|true|test" "$(SECRET_URL=x bash "$S/collect.sh" --fn scrubbed_run sh -c 'echo "$SECRET_URL|$CI|$NODE_ENV"')" "scrubbed_run drops the caller's variables and sets CI/NODE_ENV"
+assert_eq "20000" "$(NODEJS_REVIEW_TIMEOUT_TEST=30 bash "$S/collect.sh" --fn runner_timeout_ms)" "runner timeout is the test budget minus 10s, in ms"
+assert_eq "590000" "$(bash "$S/collect.sh" --fn runner_timeout_ms)" "default runner timeout from the 600s budget"
+assert_eq "1000" "$(NODEJS_REVIEW_TIMEOUT_TEST=5 bash "$S/collect.sh" --fn runner_timeout_ms)" "runner timeout floors at 1000ms"
+assert_eq "packages__api" "$(bash "$S/collect.sh" --fn pkg_slug packages/api)" "pkg_slug replaces slashes"
+assert_eq "root" "$(bash "$S/collect.sh" --fn pkg_slug .)" "pkg_slug of the root package is root"
+
 # --- not a Node.js repo ---
 nn=$(tmpdir); git -C "$nn" init -q -b main; echo hi > "$nn/README.md"
 git -C "$nn" -c user.email=f@e -c user.name=f add -A; git -C "$nn" -c user.email=f@e -c user.name=f commit -q -m base

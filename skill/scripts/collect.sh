@@ -10,7 +10,37 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 source "$HERE/lib.sh"
 
-REPO="" BASE="" HEAD="" OUT="" STATUS_REPO="" PKG_OPT="" NO_TOOLS=0 FULL_TESTS=0 FULL_AUDIT=0 INSTALL=0
+# Per-tool budgets in seconds (NODEJS_REVIEW_TIMEOUT_<TOOL> overrides). The
+# test runner's own timeout sits 10s below the test budget so a hung test dies
+# inside the runner, with its report as evidence, before the wrapper gives up.
+T_TYPECHECK=${NODEJS_REVIEW_TIMEOUT_TYPECHECK:-180}
+T_LINT=${NODEJS_REVIEW_TIMEOUT_LINT:-180}
+T_METRICS=${NODEJS_REVIEW_TIMEOUT_METRICS:-120}
+T_TEST=${NODEJS_REVIEW_TIMEOUT_TEST:-600}
+T_AUDIT=${NODEJS_REVIEW_TIMEOUT_AUDIT:-120}
+runner_timeout_ms() { local ms=$(( (T_TEST - 10) * 1000 )); [[ $ms -lt 1000 ]] && ms=1000; echo "$ms"; }
+
+# Scrubbed environment for anything that executes repository code: an
+# allow-list, never the caller's variables, which may point at real services.
+# An array rather than a function because run_with_timeout execs its arguments.
+SCRUB=(env -i "PATH=$PATH" "HOME=$HOME" "TMPDIR=${TMPDIR:-/tmp}" "LANG=${LANG:-C.UTF-8}" "LC_ALL=${LC_ALL:-}" TERM=dumb CI=true NODE_ENV=test NO_COLOR=1)
+scrubbed_run() { "${SCRUB[@]}" "$@"; }
+
+# find_bin NAME PKGDIR -> the first node_modules/.bin/NAME walking from PKGDIR
+# up to REPO (workspaces hoist most binaries to the root), else nothing.
+find_bin() {
+  local name=$1 abs
+  abs=$(cd "$REPO/$2" 2>/dev/null && pwd -P) || return 0
+  while :; do
+    if [[ -x "$abs/node_modules/.bin/$name" ]]; then echo "$abs/node_modules/.bin/$name"; return 0; fi
+    [[ "$abs" == "$REPO" || "$abs" == "/" ]] && return 0
+    abs=$(dirname "$abs")
+  done
+}
+pkg_slug() { if [[ "$1" == "." ]]; then echo root; else echo "${1//\//__}"; fi; }
+
+REPO="" BASE="" HEAD="" OUT="" STATUS_REPO="" PKG_OPT="" NO_TOOLS=0 FULL_TESTS=0 FULL_AUDIT=0 INSTALL=0 FN=""
+FN_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo) REPO=$2; shift 2 ;;
@@ -23,9 +53,16 @@ while [[ $# -gt 0 ]]; do
     --full-tests) FULL_TESTS=1; shift ;;
     --full-audit) FULL_AUDIT=1; shift ;;
     --install) INSTALL=1; shift ;;
+    --fn) FN=$2; shift 2; FN_ARGS=("$@"); break ;;
     *) die "unknown arg: $1" ;;
   esac
 done
+# --fn NAME ARGS...: run one helper and exit (tests use this)
+if [[ -n "$FN" ]]; then
+  [[ -n "$REPO" ]] && REPO=$(cd "$REPO" && pwd -P)
+  "$FN" ${FN_ARGS[@]+"${FN_ARGS[@]}"}
+  exit $?
+fi
 [[ -n "$REPO" && -n "$OUT" && -n "$HEAD" ]] || die "usage: collect.sh --repo R --head H|WORKTREE --out O [--base B] [--status-repo P] [--package DIR] [--no-tools] [--full-tests] [--full-audit] [--install]"
 command -v jq >/dev/null || die "jq not found on PATH"
 REPO=$(cd "$REPO" && pwd -P)
@@ -159,11 +196,27 @@ fi
 } > "$OUT/meta.env"
 
 # --- tools ---
-summary() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$OUT/tools/summary.txt"; }
+# One pass per owning package. With several packages each pass writes under
+# tools/<slug>/ and every summary detail starts with the package name.
+DETAIL_PREFIX=""
+summary() { printf '%s\t%s\t%s\n' "$1" "$2" "${DETAIL_PREFIX}$3" >> "$OUT/tools/summary.txt"; }
 TOOLS="typecheck lint metrics test coverage audit"
 : > "$OUT/tools/summary.txt"
 if [[ $NO_TOOLS -eq 1 ]]; then
   for t in $TOOLS; do summary "$t" "UNAVAILABLE(skipped)" "--no-tools"; done
   exit 0
 fi
-for t in $TOOLS; do summary "$t" "UNAVAILABLE(not-implemented)" ""; done
+PKG_LIST=(${PACKAGES//:/ })
+MULTI=0; [[ ${#PKG_LIST[@]} -gt 1 ]] && MULTI=1
+for PKG in "${PKG_LIST[@]}"; do
+  PKG_ABS=$(cd "$REPO/$PKG" && pwd -P)
+  if [[ $MULTI -eq 1 ]]; then
+    TOOLS_DIR="$OUT/tools/$(pkg_slug "$PKG")"
+    label=$(jq -r '.name // ""' "$PKG_ABS/package.json" 2>/dev/null || true); [[ -n "$label" ]] || label=$(basename "$PKG_ABS")
+    DETAIL_PREFIX="$label: "
+  else
+    TOOLS_DIR="$OUT/tools"; DETAIL_PREFIX=""
+  fi
+  mkdir -p "$TOOLS_DIR"
+  for t in $TOOLS; do summary "$t" "UNAVAILABLE(not-implemented)" ""; done
+done
