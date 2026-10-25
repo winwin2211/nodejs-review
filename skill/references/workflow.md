@@ -119,9 +119,11 @@ Rule-based findings from `$WORK/tools` (see `references/tooling.md`, section
 
 ## 4. Verify
 
-Group `findings-raw.json` by `file`. Dispatch `nodejs-review-verifier` agents,
-one per group of up to 8 files, in one message. Each prompt contains: repo
-path, work dir, skill dir, the findings for its files (JSON), and:
+Group `findings-raw.json` by `file` and write each group of up to 8 files to
+`$WORK/verify-<n>.json` (a dirty diff easily yields 30 findings, too many to
+paste into a prompt faithfully). Dispatch `nodejs-review-verifier` agents,
+one per group file, in one message. Each prompt contains: repo path, work
+dir, skill dir, `Findings: <WORK>/verify-<n>.json`, and:
 
 ```
 Read <SKILL>/references/severity-verdict.md (sections "Verifier rubric", "Noise rules").
