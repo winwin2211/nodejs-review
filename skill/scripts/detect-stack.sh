@@ -73,13 +73,23 @@ ws_globs=$(pj '(.workspaces // empty) | if type == "array" then .[] else (.packa
 if [[ -z "$ws_globs" ]] && in_pkg_root pnpm-workspace.yaml; then
   ws_globs=$(awk '/^packages:/ { on = 1; next } on && /^[[:space:]]*-/ { s = $0; sub(/^[[:space:]]*-[[:space:]]*/, "", s); gsub(/["'\'']/, "", s); print s; next } on && !/^[[:space:]]/ { on = 0 }' "$REPO/$PKG_ROOT/pnpm-workspace.yaml")
 fi
+# ws_expand GLOB -> the directories (relative to the package root) the glob
+# names that hold a package.json. A glob may match nothing, or a README; `**`
+# matches any depth (bash 3.2 has no globstar); one entry may hold a space.
+ws_expand() {
+  local g=$1 d IFS=
+  if [[ "$g" == *"**"* ]]; then
+    find "./${g%%\*\**}" \( -name node_modules -o -name .git \) -prune -o -name package.json -print 2>/dev/null | sed 's#/package\.json$##'
+  else
+    for d in $g; do if [[ -f "$d/package.json" ]]; then printf '%s\n' "$d"; fi; done
+  fi
+}
 ws_dirs=""
 if [[ -n "$ws_globs" ]]; then
   WORKSPACES=1
-  ws_dirs=$(cd "$REPO/$PKG_ROOT" && for g in $ws_globs; do
-    [[ "$g" == !* ]] && continue
-    for d in $g; do [[ -f "$d/package.json" ]] && rel "$PKG_ROOT/$d"; done
-  done | sed 's#^\./##' | sort -u)
+  ws_dirs=$(cd "$REPO/$PKG_ROOT" && while IFS= read -r g; do
+    if [[ -n "$g" && "$g" != !* ]]; then ws_expand "$g"; fi
+  done <<<"$ws_globs" | while IFS= read -r d; do rel "$PKG_ROOT/$d"; done | sed 's#^\./##' | awk '$0 != "." && $0 != ""' | sort -u)
 fi
 
 # --- packages owning the changed files (at most 4) ---
@@ -106,7 +116,8 @@ fi
 
 # --- TypeScript ---
 TS=0
-for p in ${PACKAGES//:/ } "$PKG_ROOT"; do [[ -f "$REPO/$p/tsconfig.json" ]] && TS=1; done
+IFS=: read -ra pkg_list <<<"$PACKAGES"
+for p in "${pkg_list[@]}" "$PKG_ROOT"; do [[ -f "$REPO/$p/tsconfig.json" ]] && TS=1; done
 [[ "$(pj '(.dependencies.typescript // .devDependencies.typescript) // ""')" != "" ]] && TS=1
 
 # --- test runner: config files, then the test script, then dependencies ---

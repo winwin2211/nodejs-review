@@ -325,6 +325,18 @@ assert_eq "7" "$(cat "$out/gc/nontest-lines.txt")" "git config: added and remove
 assert_eq $'src/a.js\nsrc/café.js\nsrc/my file.js\nsrc/new one.js\nsrc/old.js' "$(cat "$out/gc/changed-files.txt")" "git config: changed files unquoted, deleted file listed"
 assert_not_contains "$(cat "$out/gc/diff.patch")" "EXTERNAL DIFF TOOL" "git config: diff.external is not used"
 
+# a workspace package whose path holds a space is one package
+ws=$(tmpdir); git -C "$ws" init -q -b main
+echo '{ "name": "ws", "workspaces": ["packages/my api"] }' > "$ws/package.json"
+mkdir -p "$ws/packages/my api"; echo '{ "name": "my-api", "type": "module" }' > "$ws/packages/my api/package.json"
+printf 'export const a = 1;\n' > "$ws/packages/my api/a.js"
+git -C "$ws" -c user.email=f@e -c user.name=f add -A; git -C "$ws" -c user.email=f@e -c user.name=f commit -q -m base
+printf 'export const a = 2;\n' > "$ws/packages/my api/a.js"
+bash "$S/collect.sh" --repo "$ws" --base main --head WORKTREE --out "$out/ws" >/dev/null 2>&1; rc=$?
+assert_eq "0" "$rc" "space in a package path: collect finishes"
+assert_eq "my-api" "$(cat "$out/ws/changed-packages.txt")" "space in a package path: one package named"
+assert_eq "packages/my api" "$(val "$out/ws/meta.env" PKG_DIR)" "space in a package path: PKG_DIR kept whole"
+
 # --- the repo's own linter loads repo code (eslint.config.js): it runs in the scrubbed env too ---
 for lt in eslint biome; do
   lr=$(tmpdir); envdump="$lr.env"; git -C "$lr" init -q -b main

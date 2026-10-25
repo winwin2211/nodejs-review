@@ -186,7 +186,7 @@ bash "$HERE/detect-stack.sh" --repo "$REPO" --out "$OUT" --changed-files "$OUT/c
 STACK_KEYS='^(PKG_ROOT|PM|LOCKFILE|TS|RUNNER|LINTER|WORKSPACES|PACKAGES|PACKAGES_OVERFLOW|NODE|ENGINES|ENGINES_MATCH)$'
 while IFS='=' read -r k v; do [[ "$k" =~ $STACK_KEYS ]] && printf -v "$k" '%s' "$v"; done < "$OUT/stack.env"
 PKG_DIR=${PACKAGES%%:*}
-PKG_LIST=(${PACKAGES//:/ })
+IFS=: read -ra PKG_LIST <<<"$PACKAGES"
 PKG_NAME=$(jq -r '.name // ""' "$REPO/$PKG_DIR/package.json" 2>/dev/null || true)
 [[ -n "$PKG_NAME" ]] || PKG_NAME=$(basename "$(cd "$REPO/$PKG_DIR" && pwd -P)")
 
@@ -245,7 +245,7 @@ fi
 # changed-packages.txt: workspace package names, or the changed source directories' basenames; never `.`
 : > "$OUT/changed-packages.txt"
 if [[ "$WORKSPACES" == 1 ]]; then
-  for p in ${PACKAGES//:/ }; do
+  for p in "${PKG_LIST[@]}"; do
     n=$(jq -r '.name // ""' "$REPO/$p/package.json" 2>/dev/null || true)
     [[ -n "$n" ]] || n=$(basename "$p")
     [[ "$n" != "." ]] && echo "$n"

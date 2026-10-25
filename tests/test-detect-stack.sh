@@ -43,6 +43,26 @@ assert_eq "1" "$(val "$f" WORKSPACES)" "b: workspaces detected"
 assert_eq "packages/api" "$(val "$f" PACKAGES)" "b: only the package owning the changed file"
 assert_eq "0" "$(val "$f" PACKAGES_OVERFLOW)" "b: no overflow"
 
+# (b2) a glob entry without a package.json, a glob that matches nothing, `**`, a space: none ends the script
+b2=$(mkrepo); echo '{"name":"b2","workspaces":["packages/*","libs/*"]}' > "$b2/package.json"
+mkdir -p "$b2/packages/api" "$b2/packages/zz-notes"; echo '{"name":"api"}' > "$b2/packages/api/package.json"; : > "$b2/packages/zz-notes/README.md"
+printf 'packages/api/src/x.ts\n' > "$out/b2-changed.txt"
+bash "$S/detect-stack.sh" --repo "$b2" --out "$out/b2" --changed-files "$out/b2-changed.txt"; rc=$?
+assert_eq "0" "$rc" "b2: a workspace dir without package.json does not end the script"
+assert_eq "packages/api" "$(val "$out/b2/stack.env" PACKAGES)" "b2: the owning package found"
+b3=$(mkrepo); echo '{"name":"b3"}' > "$b3/package.json"; printf 'packages:\n  - "packages/**"\n' > "$b3/pnpm-workspace.yaml"
+mkdir -p "$b3/packages/group/api"; echo '{"name":"api"}' > "$b3/packages/group/api/package.json"
+printf 'packages/group/api/src/x.ts\n' > "$out/b3-changed.txt"
+bash "$S/detect-stack.sh" --repo "$b3" --out "$out/b3" --changed-files "$out/b3-changed.txt"; rc=$?
+assert_eq "0" "$rc" "b3: a ** workspace glob does not end the script"
+assert_eq "packages/group/api" "$(val "$out/b3/stack.env" PACKAGES)" "b3: ** matches nested packages"
+b4=$(mkrepo); echo '{"name":"b4","workspaces":["packages/my api"]}' > "$b4/package.json"
+mkdir -p "$b4/packages/my api"; echo '{"name":"my-api"}' > "$b4/packages/my api/package.json"
+printf 'packages/my api/x.js\n' > "$out/b4-changed.txt"
+bash "$S/detect-stack.sh" --repo "$b4" --out "$out/b4" --changed-files "$out/b4-changed.txt"; rc=$?
+assert_eq "0" "$rc" "b4: a workspace path with a space does not end the script"
+assert_eq "packages/my api" "$(val "$out/b4/stack.env" PACKAGES)" "b4: a workspace path with a space is one package"
+
 # (c) packageManager field wins over the lockfile name; yarn berry from .yarnrc.yml
 c=$(mkrepo)
 echo '{"name":"c","packageManager":"yarn@4.1.0"}' > "$c/package.json"; : > "$c/yarn.lock"; echo 'nodeLinker: node-modules' > "$c/.yarnrc.yml"
