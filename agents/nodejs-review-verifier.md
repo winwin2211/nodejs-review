@@ -36,9 +36,15 @@ the ones a senior Node.js engineer would defend in front of the author.
   failing, the metric row really is in `tools/metrics.tsv` with that value,
   the advisory row really is `introduced`). If the fact holds, keep
   `severity` and set `score` to 100; otherwise drop the finding.
-- Merge duplicates (same file and line, or the same defect worded twice,
-  including a tool `FAIL` row and an agent's description of the same failing
-  test): keep the higher severity and the better evidence, one entry.
+- Merge duplicates only when two findings name the same defect with one
+  root cause, so one fix removes both (two agents reporting the same
+  un-awaited call; a tool `FAIL` row and an agent finding that explains why
+  that test fails): keep the higher severity and the better evidence, one
+  entry. Never merge two rule-based findings that cite different rows or
+  rules (each metric, coverage, failing-test and SDD row is its own
+  finding, even on the same line), and keep different defects separate even
+  on neighboring lines or in one function. The "Dedup" paragraph of
+  `severity-verdict.md` gives examples.
 - Never add new findings. Never change `file` or `line` except to correct an
   off-by-a-few line number after reading the file.
 

@@ -22,6 +22,8 @@ for a in correctness security architecture performance clean-code sdd-tdd verifi
 done
 grep -q 'clean-code block' "$A/nodejs-review-clean-code.md" && pass || fail "clean-code agent returns the clean-code block"
 grep -q 'SDD block' "$A/nodejs-review-sdd-tdd.md" && pass || fail "sdd-tdd agent returns the SDD block"
+grep -q 'one fix removes both' "$A/nodejs-review-verifier.md" && pass || fail "verifier merges only findings with one root cause"
+grep -q 'Never merge two rule-based findings' "$A/nodejs-review-verifier.md" && pass || fail "verifier keeps each rule-based row a separate finding"
 
 # SKILL.md: frontmatter, a trigger-only description under 500 characters, hard rules, every referenced path exists
 S="$SK/SKILL.md"

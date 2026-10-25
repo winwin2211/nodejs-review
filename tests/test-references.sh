@@ -55,6 +55,9 @@ grep -q 'verify-<n>.json' "$R/workflow.md" && pass || fail "workflow hands verif
 grep -q 'NO_RECORD' "$R/checklist-sdd-tdd.md" && pass || fail "sdd-tdd treats a file no test loaded as unexecuted"
 grep -q 'not loaded by any test' "$R/report-format.md" && pass || fail "report names changed files no test loaded"
 grep -q 'scrubbed env' "$R/report-format.md" && pass || fail "report names the scrubbed environment"
+grep -q 'one fix removes both' "$R/severity-verdict.md" && pass || fail "dedup merges only findings with one root cause"
+grep -q 'Never merge two rule-based findings' "$R/severity-verdict.md" && pass || fail "dedup keeps each metric, coverage and SDD row a separate finding"
+grep -q 'same file and line' "$R/severity-verdict.md" && fail "dedup still merges on file and line alone" || pass
 
 # tooling: the prune variable, the forbidden list, budgets, the tools table
 grep -q 'ASSERT_CLEAN_PRUNE=node_modules' "$R/tooling.md" && pass || fail "tooling sets the prune list"
