@@ -1,7 +1,9 @@
 # nodejs-review: High-Standard Node.js Backend Code Review Skill
 
 Date: 2026-10-25
-Status: draft for approval
+Status: approved to build with the author's defaults (the user chose to
+proceed without answering the open questions on 2026-10-25; see "Open
+questions" for the defaults taken)
 
 ## Goal
 
@@ -581,15 +583,18 @@ the skill).
 
 ## Open questions
 
-Only the user can answer these; the rest of the document records the
-author's defaults as decisions.
+Only the user could answer these; they chose to proceed, so the defaults
+below are in force and can be revisited later.
 
 1. Where do the Node repositories under review live — the same self-hosted
-   GitLab as the Go services (then `--comment` is complete as designed), or
-   GitHub (then a `gh`-based `github-post.sh` and `#123` targets join the
-   first iteration)?
+   GitLab as the Go services, or GitHub? **Default taken: GitLab.**
+   `--comment` uses the shared `gitlab-post.sh`; GitHub PR posting stays a
+   non-goal for this iteration.
 2. Which backend stack should the checklists and the dirty fixture be sharp
-   about: NestJS, Express/Fastify with hand-wired services, or something
-   else; and which data layer (Prisma, TypeORM, Knex/Kysely, Mongoose, raw
-   `pg`)? The generic rules above apply regardless; the answer decides which
-   framework-specific traps get named explicitly.
+   about? **Default taken: generic-first.** Each checklist states the
+   framework-independent rule and then names the concrete trap for both
+   NestJS (providers, interceptors, guards, `@nestjs/typeorm`/Prisma
+   modules) and Express/Fastify with hand-wired services (middleware order,
+   async handler wrapping, plugin encapsulation), and for the common data
+   layers (Prisma, TypeORM, Knex/Kysely, Mongoose, raw `pg`) where the trap
+   differs by library. The dirty fixture stays framework-free.
