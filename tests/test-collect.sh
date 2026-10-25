@@ -302,6 +302,21 @@ bash "$S/collect.sh" --repo "$ej" --base main --head WORKTREE --out "$out/ej" --
 assert_eq "" "$(ls -A "$elsewhere")" "a key injected through package.json does not redirect collect's output"
 assert_file "$out/ej/meta.env" "collect writes meta.env to its own --out"
 
+# --- the repo's own linter loads repo code (eslint.config.js): it runs in the scrubbed env too ---
+for lt in eslint biome; do
+  lr=$(tmpdir); envdump="$lr.env"; git -C "$lr" init -q -b main
+  echo "{ \"name\": \"lr\", \"type\": \"module\", \"devDependencies\": { \"$lt\": \"1.0.0\" } }" > "$lr/package.json"
+  if [[ $lt == eslint ]]; then : > "$lr/eslint.config.js"; else echo '{}' > "$lr/biome.json"; fi
+  printf 'node_modules\n' > "$lr/.gitignore"; mkdir -p "$lr/node_modules/.bin"
+  printf '#!/bin/sh\nenv > "%s"\nfor a in "$@"; do [ "$prev" = "-o" ] && echo "[]" > "$a"; prev=$a; done\necho "{\\"diagnostics\\":[]}"\n' "$envdump" > "$lr/node_modules/.bin/$lt"
+  chmod +x "$lr/node_modules/.bin/$lt"; printf 'export const a = 1;\n' > "$lr/a.js"
+  git -C "$lr" -c user.email=f@e -c user.name=f add -A; git -C "$lr" -c user.email=f@e -c user.name=f commit -q -m base
+  printf 'export const a = 2;\n' > "$lr/a.js"
+  NR_CANARY_SECRET=leaked bash "$S/collect.sh" --repo "$lr" --base main --head WORKTREE --out "$out/lr-$lt" >/dev/null 2>&1
+  assert_file "$envdump" "$lt: the repo's linter ran"
+  assert_not_contains "$(cat "$envdump" 2>/dev/null)" "NR_CANARY_SECRET" "$lt: the repo's linter does not see the caller's environment"
+done
+
 # --- the merge-base worktree runs no repository hook (husky sets core.hooksPath to a tracked dir) ---
 hk=$(tmpdir); hcanary="$hk.hook-ran"; git -C "$hk" init -q -b main
 git -C "$hk" config user.email f@e; git -C "$hk" config user.name f; git -C "$hk" config core.hooksPath .husky

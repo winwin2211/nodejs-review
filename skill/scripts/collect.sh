@@ -351,13 +351,14 @@ run_lint() {
   esac
   if [[ "$LINTER" == biome ]]; then
     # Biome's JSON carries byte spans, not lines: kept whole as evidence, never hunk-filtered.
-    st=$(cd "$PKG_ABS" && run_with_timeout "$T_LINT" "$TOOLS_DIR/lint.json" "$bin" lint --reporter=json "${files[@]}")
+    st=$(cd "$PKG_ABS" && run_with_timeout "$T_LINT" "$TOOLS_DIR/lint.json" "${SCRUB[@]}" "$bin" lint --reporter=json "${files[@]}")
     case $st in TIMEOUT) summary lint "UNAVAILABLE(timeout)" "${T_LINT}s"; return ;; MISSING) summary lint "UNAVAILABLE(missing)" ""; return ;; esac
     n=$(jq '.diagnostics | length' "$TOOLS_DIR/lint.json" 2>/dev/null || echo "?")
     if [[ $st == OK ]]; then summary lint OK "$n diagnostics (biome, unfiltered)"; else summary lint FAIL "$n diagnostics (biome, unfiltered)"; fi
     return
   fi
-  st=$(cd "$PKG_ABS" && run_with_timeout "$T_LINT" "$TOOLS_DIR/lint.txt" "$bin" ${cfg[@]+"${cfg[@]}"} -f json -o "$TOOLS_DIR/lint.json" "${files[@]}")
+  # scrubbed: the repo's eslint.config.js is repository code, loaded and run by ESLint
+  st=$(cd "$PKG_ABS" && run_with_timeout "$T_LINT" "$TOOLS_DIR/lint.txt" "${SCRUB[@]}" "$bin" ${cfg[@]+"${cfg[@]}"} -f json -o "$TOOLS_DIR/lint.json" "${files[@]}")
   case $st in TIMEOUT) summary lint "UNAVAILABLE(timeout)" "${T_LINT}s"; return ;; MISSING) summary lint "UNAVAILABLE(missing)" ""; return ;; esac
   [[ -f "$TOOLS_DIR/lint.json" ]] || { summary lint "UNAVAILABLE(lint-error)" "$(head -1 "$TOOLS_DIR/lint.txt" | cut -c1-120)"; return; }
   n=$(bash "$HERE/lint-changed.sh" "$TOOLS_DIR/lint.json" "$OUT/added-lines.tsv" "$REPO" "$TOOLS_DIR/lint-changed.json")

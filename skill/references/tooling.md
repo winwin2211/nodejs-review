@@ -103,7 +103,8 @@ stash`, `git checkout` of files, `git add`, or any command with a redirect
 into the repo. `node --check <file>` (syntax only) is allowed. If a tool is
 missing, print the hint from `tools/summary.txt` and continue.
 
-Test runs execute the repository's code by design. They run under a
+Test runs execute the repository's code by design, and so does the repo's
+own linter (ESLint loads `eslint.config.js`). Both run under a
 scrubbed environment (`PATH HOME TMPDIR LANG LC_ALL TERM` plus `CI=true
 NODE_ENV=test NO_COLOR=1`, nothing else) so variables that point at real
 services are absent; a test that then fails on a missing variable or a
