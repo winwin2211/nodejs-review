@@ -378,6 +378,24 @@ bash "$S/collect.sh" --repo "$hk" --base main --head feature/x --out "$out/hk" >
 [[ -e "$hcanary" ]] && fail "creating the merge-base worktree ran the repo's post-checkout hook" || pass
 assert_contains "$(cat "$out/hk/tools/summary.txt")" $'metrics\t' "hook repo: collect still ran the tools"
 
+# --- node:test runs with the script's loader flags and file patterns ---
+nt=$(tmpdir)
+jq -n '{name: "nt", scripts: {test: "node --import tsx --experimental-strip-types --test --test-concurrency=1 '"'"'test/**/*.test.ts'"'"' && eslint ."}}' > "$nt/a.json"
+assert_eq $'F\t--import\nF\ttsx\nF\t--experimental-strip-types\nP\ttest/**/*.test.ts' "$(bash "$S/collect.sh" --fn node_test_args "$nt/a.json")" "node_test_args: loader flags and the pattern, nothing after &&"
+jq -n '{name: "nt", scripts: {test: "tsx --test test/a.test.ts"}}' > "$nt/b.json"
+assert_eq $'F\t--import\nF\ttsx\nP\ttest/a.test.ts' "$(bash "$S/collect.sh" --fn node_test_args "$nt/b.json")" "node_test_args: tsx --test is node --import tsx --test"
+jq -n '{name: "nt", scripts: {test: "node --test"}}' > "$nt/c.json"
+assert_eq "" "$(bash "$S/collect.sh" --fn node_test_args "$nt/c.json")" "node_test_args: plain node --test adds nothing"
+# end to end: a test file outside node's default patterns is found through the script's pattern
+nr=$(tmpdir); git -C "$nr" init -q -b main; mkdir -p "$nr/src" "$nr/checks"
+jq -n '{name: "nr", type: "module", scripts: {test: "node --test checks/*.check.js"}}' > "$nr/package.json"
+printf 'export const sum = (a, b) => a + b;\n' > "$nr/src/sum.js"
+printf 'import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { sum } from "../src/sum.js";\ntest("sums", () => assert.equal(sum(1, 2), 3));\n' > "$nr/checks/sum.check.js"
+git -C "$nr" -c user.email=f@e -c user.name=f add -A; git -C "$nr" -c user.email=f@e -c user.name=f commit -q -m base
+printf 'export const sum = (a, b) => a + b;\nexport const two = 2;\n' > "$nr/src/sum.js"
+bash "$S/collect.sh" --repo "$nr" --base main --head WORKTREE --out "$out/nr" >/dev/null 2>&1
+assert_contains "$(grep $'^test\t' "$out/nr/tools/summary.txt")" $'OK\t1 pass' "node:test: the script's pattern finds the test"
+
 # --- not a Node.js repo ---
 nn=$(tmpdir); git -C "$nn" init -q -b main; echo hi > "$nn/README.md"
 git -C "$nn" -c user.email=f@e -c user.name=f add -A; git -C "$nn" -c user.email=f@e -c user.name=f commit -q -m base

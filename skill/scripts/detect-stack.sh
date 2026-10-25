@@ -142,8 +142,11 @@ runner_in() { # dir -> vitest|jest|node-test|mocha|bun-test|ava|none
   done
   if has_cfg "$dir" jest.config js ts mjs cjs json || [[ "$(pjd "$dir" '.jest // ""')" != "" ]]; then echo jest; return; fi
   script=$(pjd "$dir" '.scripts.test // ""')
+  # node or tsx, any flags (--import tsx, --experimental-strip-types), then --test
+  local node_test_re='(^|[[:space:]])(node|tsx)([[:space:]]+[^[:space:]&|;]+)*[[:space:]]+--test([[:space:]]|$)'
+  if [[ "$script" =~ $node_test_re ]]; then echo node-test; return; fi
   case "$script" in
-    *"node --test"*|*"node --experimental-test"*) echo node-test; return ;;
+    *"node --experimental-test"*) echo node-test; return ;;
     *vitest*) echo vitest; return ;;
     *jest*) echo jest; return ;;
     *mocha*) echo mocha; return ;;

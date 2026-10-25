@@ -39,6 +39,32 @@ find_bin() {
     abs=$(dirname "$abs")
   done
 }
+# node_test_args PKG_JSON -> the loader flags (`F<TAB>flag`) and file patterns
+# (`P<TAB>pattern`) of the package's `node --test` or `tsx --test` script, so
+# the run loads TypeScript and finds the same files. Only the first command of
+# the script is read, and only flags that change how files load are kept
+# (never --watch). The tokens are data: nothing here expands or evaluates them.
+node_test_args() {
+  local script tok want="" seen=0 cmd=0
+  script=$(jq -r '.scripts.test // ""' "$1" 2>/dev/null) || return 0
+  script=${script%%&&*}; script=${script%%||*}; script=${script%%;*}; script=${script%%|*}
+  set -f
+  for tok in $script; do
+    tok=${tok#[\"\']}; tok=${tok%[\"\']}
+    if [[ -n "$want" ]]; then printf 'F\t%s\n' "$tok"; want=""; continue; fi
+    case "$tok" in
+      node) cmd=1 ;;
+      tsx) if [[ $cmd -eq 0 ]]; then cmd=1; printf 'F\t--import\nF\ttsx\n'; fi ;;
+      --test) seen=1 ;;
+      --import|--loader|--experimental-loader|--require|-r) printf 'F\t%s\n' "$tok"; want=1 ;;
+      --import=*|--loader=*|--experimental-loader=*|--require=*|--experimental-strip-types|--experimental-transform-types) printf 'F\t%s\n' "$tok" ;;
+      -*) ;;
+      *) [[ $seen -eq 1 ]] && printf 'P\t%s\n' "$tok" ;;
+    esac
+  done
+  set +f
+  return 0
+}
 pkg_slug() { if [[ "$1" == "." ]]; then echo root; else echo "${1//\//__}"; fi; }
 
 REPO="" BASE="" HEAD="" OUT="" STATUS_REPO="" PKG_OPT="" NO_TOOLS=0 FULL_TESTS=0 FULL_AUDIT=0 INSTALL=0 FN=""
@@ -430,7 +456,9 @@ run_test() {
   case "$RUNNER" in
     node-test)
       report="$TOOLS_DIR/test.txt"
-      cmd=(node --test --test-reporter=tap --test-reporter-destination="$report" --experimental-test-coverage --test-reporter=lcov --test-reporter-destination="$TOOLS_DIR/coverage/lcov.info" --test-timeout="$tms")
+      local nflags=() npats=() k v
+      while IFS=$'\t' read -r k v; do if [[ $k == F ]]; then nflags+=("$v"); else npats+=("$v"); fi; done < <(node_test_args "$PKG_ABS/package.json")
+      cmd=(node ${nflags[@]+"${nflags[@]}"} --test --test-reporter=tap --test-reporter-destination="$report" --experimental-test-coverage --test-reporter=lcov --test-reporter-destination="$TOOLS_DIR/coverage/lcov.info" --test-timeout="$tms" ${npats[@]+"${npats[@]}"})
       st=$(cd "$PKG_ABS" && run_with_timeout "$T_TEST" "$TOOLS_DIR/test-stdout.txt" "${SCRUB[@]}" "${cmd[@]}")
       ;;
     vitest|jest)

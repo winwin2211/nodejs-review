@@ -112,6 +112,12 @@ bash "$S/detect-stack.sh" --repo "$e" --out "$out/e"
 assert_eq "node-test" "$(val "$out/e/stack.env" RUNNER)" "e: node:test from the test script"
 assert_eq "none" "$(val "$out/e/stack.env" LINTER)" "e: no linter"
 assert_eq "unknown" "$(val "$out/e/stack.env" PM)" "e: no lockfile -> unknown"
+# node:test behind a loader or a flag
+for sc in 'node --import tsx --test' 'node --experimental-strip-types --test' 'tsx --test' 'node --test --experimental-strip-types' 'cross-env NODE_ENV=test node --require ./setup.js --test test/'; do
+  e2=$(mkrepo); jq -n --arg s "$sc" '{name: "e2", scripts: {test: $s}}' > "$e2/package.json"
+  bash "$S/detect-stack.sh" --repo "$e2" --out "$out/e2"
+  assert_eq "node-test" "$(val "$out/e2/stack.env" RUNNER)" "e2: node:test from '$sc'"
+done
 f1=$(mkrepo); echo '{"name":"f","scripts":{"test":"mocha --recursive"}}' > "$f1/package.json"
 bash "$S/detect-stack.sh" --repo "$f1" --out "$out/f1"
 assert_eq "mocha" "$(val "$out/f1/stack.env" RUNNER)" "f: mocha"
