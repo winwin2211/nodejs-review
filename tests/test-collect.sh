@@ -270,6 +270,21 @@ assert_contains "$(cat "$out/au/tools/summary.txt")" $'audit\tFAIL\t1 introduced
 assert_contains "$(cat "$out/au/tools/audit-new.tsv")" $'lodash\t4.17.20\thigh\tGHSA-p6mc-m468-83gw\tintroduced' "audit: row written"
 assert_file "$out/au/tools/audit.json" "audit: raw report kept"
 
+# --- package.json values are data: stack.env is read, never sourced ---
+# engines ">=..." once became a redirect that wrote a file named "=22.12.0" into
+# the reviewed repo; "$(...)" would have run a command from the repo
+ev=$(tmpdir); canary="$ev.canary"; git -C "$ev" init -q -b main
+printf '{ "name": "ev", "type": "module", "engines": { "node": ">=22.12.0 $(touch %s)" } }\n' "$canary" > "$ev/package.json"
+printf 'export const a = 1;\n' > "$ev/a.js"
+git -C "$ev" -c user.email=f@e -c user.name=f add -A; git -C "$ev" -c user.email=f@e -c user.name=f commit -q -m base
+printf 'export const a = 2;\n' > "$ev/a.js"
+(cd "$ev" && bash "$S/collect.sh" --repo "$ev" --base main --head WORKTREE --out "$out/ev" --no-tools >/dev/null 2>&1) || true
+[[ -e "$canary" ]] && fail "a \$(...) in package.json engines ran a command" || pass
+[[ -e "$ev/=22.12.0" ]] && fail "an engines '>' wrote a file into the reviewed repo" || pass
+assert_eq "" "$(git -C "$ev" status --porcelain --ignored | grep -v ' a.js$')" "nothing but the change itself in the repo after collect"
+assert_eq ">=22.12.0 \$(touch $canary)" "$(val "$out/ev/stack.env" ENGINES)" "engines recorded verbatim in stack.env"
+assert_eq "ev" "$(val "$out/ev/meta.env" PKG_NAME)" "collect still reads stack.env and finishes"
+
 # --- not a Node.js repo ---
 nn=$(tmpdir); git -C "$nn" init -q -b main; echo hi > "$nn/README.md"
 git -C "$nn" -c user.email=f@e -c user.name=f add -A; git -C "$nn" -c user.email=f@e -c user.name=f commit -q -m base
