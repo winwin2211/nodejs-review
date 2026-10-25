@@ -63,6 +63,29 @@ jq '.testResults[0].assertionResults[1].failureMessages = ["Error: connect ECONN
 bash "$S/classify-tests.sh" vitest "$d/mixed.json" > "$d/mixed.txt"
 assert_contains "$(cat "$d/mixed.txt")" $'sub is wrong on purpose\tFAIL' "a message ending on an assertion is FAIL despite an earlier ECONNREFUSED line"
 
+# a test file that fails to load has no assertion results: it is still a failure,
+# classified by its suite message (a bad import is FAIL, an unreachable database is not)
+cat > "$d/suite.json" <<'EOF'
+{ "success": false, "numFailedTestSuites": 2, "testResults": [
+  { "name": "/repo/test/broken.test.js", "status": "failed", "assertionResults": [],
+    "message": "Error: Cannot find module '../src/gone.js'\n    at Object.<anonymous> (/repo/test/broken.test.js:1:1)" },
+  { "name": "/repo/test/db.test.js", "status": "failed", "assertionResults": [],
+    "message": "Error: connect ECONNREFUSED 127.0.0.1:5432" },
+  { "name": "/repo/test/ok.test.js", "status": "passed", "message": "",
+    "assertionResults": [ { "fullName": "adds", "title": "adds", "status": "passed", "failureMessages": [] } ] } ] }
+EOF
+for runner in vitest jest; do
+  bash "$S/classify-tests.sh" "$runner" "$d/suite.json" > "$d/suite-$runner.txt"
+  assert_contains "$(cat "$d/suite-$runner.txt")" $'/repo/test/broken.test.js\t(suite failed to run)\tFAIL' "$runner: a test file that fails to load is FAIL"
+  assert_contains "$(cat "$d/suite-$runner.txt")" $'/repo/test/db.test.js\t(suite failed to run)\tNOT_RUNNABLE' "$runner: a suite that cannot reach its database is NOT_RUNNABLE"
+  assert_eq "PASS=1 FAIL=1 NOT_RUNNABLE=1 SKIP=0" "$(tail -1 "$d/suite-$runner.txt")" "$runner: suite failures are counted"
+done
+echo '{ "testResults": [ { "name": "/repo/test/x.test.js", "status": "failed", "message": "SyntaxError: Unexpected token" } ] }' > "$d/noassert.json"
+bash "$S/classify-tests.sh" vitest "$d/noassert.json" > "$d/noassert.txt" 2>&1
+assert_eq "PASS=0 FAIL=1 NOT_RUNNABLE=0 SKIP=0" "$(tail -1 "$d/noassert.txt")" "a suite with no assertionResults key is counted"
+# a report without testResults is not a passing run
+assert_exit 1 bash "$S/classify-tests.sh" vitest <(echo '{ "error": "boom" }')
+
 # unknown runner
 assert_exit 1 bash "$S/classify-tests.sh" mocha "$d/env.tap"
 

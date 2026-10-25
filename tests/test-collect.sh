@@ -235,6 +235,13 @@ bash "$S/collect.sh" --repo "$fv" --base main --head feature/x --out "$out/fv"
 assert_contains "$(cat "$out/fv/tools/summary.txt")" $'test\tFAIL\t' "fake vitest: the recording's failure is reported"
 assert_contains "$(cat "$out/fv/tools/summary.txt")" $'coverage\tUNAVAILABLE(no-coverage-provider)' "fake vitest: missing provider is reported, tests still ran"
 assert_contains "$(cat "$out/fv/tools/test-classified.txt")" $'sub is wrong on purpose\tFAIL' "fake vitest: classification from the JSON report"
+# a report the classifier cannot read is UNAVAILABLE, never `test OK 0 pass`, and collect still finishes
+fvb=$(tmpdir); cp -R "$fv/." "$fvb"
+printf '#!/bin/sh\nfor a in "$@"; do case "$a" in --outputFile=*) echo "{\\"error\\":\\"boom\\"}" > "${a#--outputFile=}" ;; esac; done\nexit 1\n' > "$fvb/node_modules/.bin/vitest"
+bash "$S/collect.sh" --repo "$fvb" --base main --head feature/x --out "$out/fvb" >/dev/null 2>&1; rc=$?
+assert_eq 0 "$rc" "bad test report: collect exits 0"
+assert_contains "$(cat "$out/fvb/tools/summary.txt")" $'test\tUNAVAILABLE(bad-report)' "bad test report: test row is UNAVAILABLE(bad-report)"
+assert_contains "$(cat "$out/fvb/tools/summary.txt")" $'audit\t' "bad test report: the audit row still runs"
 
 # --- Task 11: audit only when dependencies changed; introduced advisories fail ---
 assert_contains "$(cat "$out/c9/tools/summary.txt")" $'audit\tUNAVAILABLE(skipped)\tlockfile unchanged' "clean: no dependency change -> audit skipped"

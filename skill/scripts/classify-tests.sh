@@ -22,6 +22,8 @@ classify() { # failure text on stdin -> FAIL | NOT_RUNNABLE
 
 case "$RUNNER" in
   vitest|jest)
+    # a report without a testResults array is no evidence of a passing run
+    jq -e '.testResults | type == "array"' "$REPORT" >/dev/null 2>&1 || { echo "classify-tests.sh: no testResults array in $REPORT" >&2; exit 1; }
     pass=0; fail=0; nr=0; skip=0
     while IFS=$'\t' read -r file title status msg; do
       case "$status" in
@@ -33,7 +35,13 @@ case "$RUNNER" in
           printf '%s\t%s\t%s\n' "$file" "$title" "$c"
           ;;
       esac
-    done < <(jq -r '.testResults[] | .name as $f | .assertionResults[] | [$f, (.fullName // .title), .status, ((.failureMessages // []) | join("\n"))] | @tsv' "$REPORT")
+    # a file that failed to load (bad import, syntax error, a failing hook) has
+    # no failed assertion: its suite message stands for it as one row
+    done < <(jq -r '.testResults[] | .name as $f
+      | ((.assertionResults // [])[] | [$f, (.fullName // .title), .status, ((.failureMessages // []) | join("\n"))]),
+        (select(.status == "failed" and ([(.assertionResults // [])[] | select(.status == "failed")] | length) == 0)
+          | [$f, "(suite failed to run)", "failed", (.message // .failureMessage // "")])
+      | @tsv' "$REPORT")
     echo "PASS=$pass FAIL=$fail NOT_RUNNABLE=$nr SKIP=$skip"
     ;;
   node-test)

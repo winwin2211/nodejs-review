@@ -450,7 +450,10 @@ run_test() {
     summary test "UNAVAILABLE(run-error)" "$(head -1 "$TOOLS_DIR/test-stdout.txt" 2>/dev/null | cut -c1-120)"; summary coverage "UNAVAILABLE(run-error)" ""; return
   fi
   local prefix=""; [[ "$PKG" != "." ]] && prefix="$PKG/"
-  bash "$HERE/classify-tests.sh" "$RUNNER" "$report" | sed "s#^$PKG_ABS/#$prefix#" > "$TOOLS_DIR/test-classified.txt"
+  if ! bash "$HERE/classify-tests.sh" "$RUNNER" "$report" > "$TOOLS_DIR/.classified" 2> "$TOOLS_DIR/classify.txt"; then
+    summary test "UNAVAILABLE(bad-report)" "$(head -1 "$TOOLS_DIR/classify.txt" | cut -c1-120)"; summary coverage "UNAVAILABLE(bad-report)" ""; rm -f "$TOOLS_DIR/.classified"; return
+  fi
+  sed "s#^$PKG_ABS/#$prefix#" "$TOOLS_DIR/.classified" > "$TOOLS_DIR/test-classified.txt"; rm -f "$TOOLS_DIR/.classified"
   local counts p fl n
   counts=$(tail -1 "$TOOLS_DIR/test-classified.txt")
   p=$(sed -E 's/.*PASS=([0-9]+).*/\1/' <<<"$counts"); fl=$(sed -E 's/.*FAIL=([0-9]+).*/\1/' <<<"$counts"); n=$(sed -E 's/.*NOT_RUNNABLE=([0-9]+).*/\1/' <<<"$counts")
