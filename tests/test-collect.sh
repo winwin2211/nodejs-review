@@ -292,6 +292,16 @@ assert_eq "" "$(git -C "$ev" status --porcelain --ignored | grep -v ' a.js$')" "
 assert_eq ">=22.12.0 \$(touch $canary)" "$(val "$out/ev/stack.env" ENGINES)" "engines recorded verbatim in stack.env"
 assert_eq "ev" "$(val "$out/ev/meta.env" PKG_NAME)" "collect still reads stack.env and finishes"
 
+# a newline in engines once added an OUT= line to stack.env, and collect.sh took it as its out dir
+ej=$(tmpdir); elsewhere=$(tmpdir); git -C "$ej" init -q -b main
+printf '{ "name": "ej", "type": "module", "engines": { "node": ">=18\\nOUT=%s" } }\n' "$elsewhere" > "$ej/package.json"
+printf 'export const a = 1;\n' > "$ej/a.js"
+git -C "$ej" -c user.email=f@e -c user.name=f add -A; git -C "$ej" -c user.email=f@e -c user.name=f commit -q -m base
+printf 'export const a = 2;\n' > "$ej/a.js"
+bash "$S/collect.sh" --repo "$ej" --base main --head WORKTREE --out "$out/ej" --no-tools >/dev/null 2>&1
+assert_eq "" "$(ls -A "$elsewhere")" "a key injected through package.json does not redirect collect's output"
+assert_file "$out/ej/meta.env" "collect writes meta.env to its own --out"
+
 # --- the merge-base worktree runs no repository hook (husky sets core.hooksPath to a tracked dir) ---
 hk=$(tmpdir); hcanary="$hk.hook-ran"; git -C "$hk" init -q -b main
 git -C "$hk" config user.email f@e; git -C "$hk" config user.name f; git -C "$hk" config core.hooksPath .husky

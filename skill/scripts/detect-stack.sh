@@ -35,7 +35,8 @@ else
   [[ -n "$PKG_ROOT" ]] || die "not a Node.js repo: no package.json under $REPO"
 fi
 PKG_JSON="$REPO/$PKG_ROOT/package.json"
-pj() { jq -r "$1" "$PKG_JSON" 2>/dev/null || true; }
+# pj FILTER -> its output from package.json, a line break inside a string read as a space
+pj() { jq -r "($1) | if type == \"string\" then gsub(\"[\\r\\n]\"; \" \") else . end" "$PKG_JSON" 2>/dev/null || true; }
 rel() { # path relative to repo, no leading ./
   local p=$1; p=${p#"$REPO"/}; p=${p#./}; printf '%s\n' "$p"
 }
@@ -165,17 +166,19 @@ if [[ -n "$ENGINES" && "$NODE" =~ ^v([0-9]+)\.([0-9]+) ]]; then
     }')
 fi
 
+# one KEY=value line per key: a line break in a value (a directory name) would add a key
+kv() { local v=${2//$'\n'/ }; printf '%s=%s\n' "$1" "${v//$'\r'/ }"; }
 {
-  echo "PKG_ROOT=$PKG_ROOT"
-  echo "PM=$PM"
-  echo "LOCKFILE=$LOCKFILE"
-  echo "TS=$TS"
-  echo "RUNNER=$RUNNER"
-  echo "LINTER=$LINTER"
-  echo "WORKSPACES=$WORKSPACES"
-  echo "PACKAGES=$PACKAGES"
-  echo "PACKAGES_OVERFLOW=$PACKAGES_OVERFLOW"
-  echo "NODE=$NODE"
-  echo "ENGINES=$ENGINES"
-  echo "ENGINES_MATCH=$ENGINES_MATCH"
+  kv PKG_ROOT "$PKG_ROOT"
+  kv PM "$PM"
+  kv LOCKFILE "$LOCKFILE"
+  kv TS "$TS"
+  kv RUNNER "$RUNNER"
+  kv LINTER "$LINTER"
+  kv WORKSPACES "$WORKSPACES"
+  kv PACKAGES "$PACKAGES"
+  kv PACKAGES_OVERFLOW "$PACKAGES_OVERFLOW"
+  kv NODE "$NODE"
+  kv ENGINES "$ENGINES"
+  kv ENGINES_MATCH "$ENGINES_MATCH"
 } > "$OUT/stack.env"

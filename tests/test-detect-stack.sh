@@ -87,6 +87,14 @@ g2=$(mkrepo); echo '{"name":"g2","engines":{"node":">=18"}}' > "$g2/package.json
 bash "$S/detect-stack.sh" --repo "$g2" --out "$out/g2"
 assert_eq "1" "$(val "$out/g2/stack.env" ENGINES_MATCH)" "g2: engines match"
 
+# (g3) a newline in a package.json value cannot add a key to stack.env
+g3=$(mkrepo); printf '{"name":"g3","engines":{"node":">=18\\nOUT=/elsewhere\\rRUNNER=jest"}}\n' > "$g3/package.json"
+bash "$S/detect-stack.sh" --repo "$g3" --out "$out/g3"
+assert_eq "12" "$(wc -l < "$out/g3/stack.env" | tr -d ' ')" "g3: one line per key"
+assert_eq "" "$(val "$out/g3/stack.env" OUT)" "g3: no OUT= line injected"
+assert_eq "none" "$(val "$out/g3/stack.env" RUNNER)" "g3: no RUNNER= line injected"
+assert_eq ">=18 OUT=/elsewhere RUNNER=jest" "$(val "$out/g3/stack.env" ENGINES)" "g3: line breaks in a value become spaces"
+
 # (h) five changed workspace packages overflow the four-package cap
 h=$(mkrepo); echo '{"name":"h","workspaces":["packages/*"]}' > "$h/package.json"; : > "$h/package-lock.json"
 : > "$out/h-changed.txt"

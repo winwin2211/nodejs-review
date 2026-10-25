@@ -172,8 +172,10 @@ awk '
 
 # --- stack and owning packages ---
 bash "$HERE/detect-stack.sh" --repo "$REPO" --out "$OUT" --changed-files "$OUT/changed-files.txt" ${PKG_OPT:+--package "$PKG_OPT"}
-# stack.env carries values from the repo's package.json (engines ">=22", "$(...)"): read it as data, never source it
-while IFS='=' read -r k v; do [[ "$k" =~ ^[A-Z_]+$ ]] && printf -v "$k" '%s' "$v"; done < "$OUT/stack.env"
+# stack.env carries values from the repo's package.json (engines ">=22", "$(...)"): read it as data, never
+# source it, and only the keys detect-stack.sh writes (an OUT= or PATH= line must not set this script's variables)
+STACK_KEYS='^(PKG_ROOT|PM|LOCKFILE|TS|RUNNER|LINTER|WORKSPACES|PACKAGES|PACKAGES_OVERFLOW|NODE|ENGINES|ENGINES_MATCH)$'
+while IFS='=' read -r k v; do [[ "$k" =~ $STACK_KEYS ]] && printf -v "$k" '%s' "$v"; done < "$OUT/stack.env"
 PKG_DIR=${PACKAGES%%:*}
 PKG_LIST=(${PACKAGES//:/ })
 PKG_NAME=$(jq -r '.name // ""' "$REPO/$PKG_DIR/package.json" 2>/dev/null || true)
