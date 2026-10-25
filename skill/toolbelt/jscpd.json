@@ -1,0 +1,14 @@
+{
+  "minLines": 10,
+  "minTokens": 70,
+  "reporters": ["json"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/.git/**",
+    "**/*.d.ts"
+  ],
+  "absolute": true
+}

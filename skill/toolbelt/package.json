@@ -1,0 +1,16 @@
+{
+  "name": "nodejs-review-toolbelt",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pinned lint, metrics, duplication and TypeScript binaries used by the nodejs-review skill; installed once by install.sh, never into a reviewed repository.",
+  "type": "module",
+  "dependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "eslint-plugin-sonarjs": "4.2.2",
+    "globals": "17.13.0",
+    "jscpd": "5.4.2",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0"
+  }
+}
