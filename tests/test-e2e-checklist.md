@@ -105,4 +105,64 @@ fixed with a failing test first:
 
 ## Real repository
 
-Pending: Task 15.
+Date: 2026-10-25   Commits: first run collected at 94c60ed (reviewers and verifiers ran while the fixes below landed), collect re-run at 5215094
+
+A local personal TypeScript + Vitest site designated by the user: 33 commits
+and 137 changed files against `main`, plus two untracked files, reviewed in
+worktree mode with `--base main`. The diff is 9,502 lines, so the large-diff
+rule split correctness and security into two groups; 8 reviewers, then 4
+verifiers on 89 findings.
+
+Tools: `typecheck OK, no baseline | lint 33 new (strict fallback) | metrics 300 over | test 267 pass, 0 failing | coverage unavailable (no-coverage-provider) | audit OK`
+(the audit and magic-number values are from the fixed scripts; the first
+run's summary said `audit FAIL 6 introduced (1 high/critical)`, see 2 below)
+
+- [x] Stack line `npm | TypeScript | vitest | none | 1 package(s)`; the
+      header flags the engines mismatch (node v22.4.0 against `>=22.12.0`)
+- [ ] Coverage maps to `.ts` sources — not verified: the repo has no
+      `@vitest/coverage-v8`, so coverage is `UNAVAILABLE(no-coverage-provider)`
+      while the tests still report 267 pass, as the plan's Review Focus asks.
+      No test covers `.ts` paths in lcov either (the Vitest recording maps
+      `src/calc.js`)
+- [x] `vitest related` scoped the run: 10 of 17 unit test files ran
+- [x] `git status --porcelain --ignored` and the mtime scan show nothing —
+      only after a fix: the first run failed with `assert-clean.sh` exit 2
+      naming a file `=22.12.0` in the repo root (below); the collect re-run
+      at 5215094 ends with `No artifacts left: verified` and an unchanged
+      ignored-status listing
+- Verdict: REQUEST CHANGES (2 blockers, 38 major, 31 minor); 7 under "Needs
+  human judgment". The blockers: the audio URL and storage-key contract is
+  the reverse of the spec, and cognitive complexity 31 in one function.
+
+Defects the run exposed in the skill, each fixed with a failing test first:
+
+1. `collect.sh` sourced `stack.env`, which carries values from `package.json`.
+   The engines range `>=22.12.0` became a redirect and wrote an empty file
+   `=22.12.0` into the reviewed repo; a `$(...)` in that field ran a command
+   from the repo (reproduced by the test with a canary file). `stack.env` is
+   now read line by line as data.
+2. Every advisory was `introduced`, including four whose versions were the
+   same at the merge-base: `collect.sh` saves the base lockfile as
+   `tools/lock-base`, and `audit-report.sh` picked its parser from the `.json`
+   suffix, so an npm lockfile was read as pnpm YAML. The format is now read
+   from the content. The verifier had already dropped the false high-severity
+   BLOCKER by checking both lockfiles itself.
+3. The hex literal `0x56cd` was reported as magic number `0`; the value
+   column now keeps the literal as ESLint prints it (hex, exponent,
+   separators, BigInt).
+
+Seen, not changed:
+
+- `.astro` files are not source files to the skill (it targets Node.js
+  backends), so they get no metrics or lint, and the large-diff split gives
+  them no correctness or security reviewer. The whole-diff reviewers still
+  read them; sdd-tdd cited one.
+- With moderate advisories introduced and none high or critical, the Tools
+  line rule prints `audit OK`; the count shows only in `tools/summary.txt`.
+- 262 of the 300 metric rows are magic numbers, most from constant tables
+  (69 in one photo-layout config). They aggregate to one MINOR per file.
+- Orchestrator gaps (the check the Task 14 ruling deferred here): the
+  workflow leaves rule-file collection and report rendering to the
+  orchestrator, with no script. Here they were done with ad hoc shell and
+  Python helpers in the scratch directory; one ad hoc loop hung on a path
+  containing a space.
