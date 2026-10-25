@@ -189,6 +189,48 @@ bash "$S/collect.sh" --repo "$fx/clean" --base main --head feature/NR-100-orders
 assert_contains "$(cat "$out/c9/tools/summary.txt")" $'metrics\tOK' "clean: metrics within thresholds"
 assert_eq "" "$(cat "$out/c9/tools/metrics.tsv")" "clean: no metric rows"
 
+# --- Task 10: tests, classification and changed-line coverage on the fixtures (node:test) ---
+s10=$(cat "$out/d9/tools/summary.txt")
+assert_contains "$s10" $'test\tFAIL\t' "dirty: the handler test fails"
+assert_contains "$(grep $'^test\t' "$out/d9/tools/summary.txt")" "1 failing" "dirty: one failing test counted"
+assert_contains "$(grep $'^test\t' "$out/d9/tools/summary.txt")" "(scrubbed env)" "dirty: header says the environment was scrubbed"
+assert_contains "$(cat "$out/d9/tools/test-classified.txt")" $'order_handler.test.js\tgetOrders returns 404 for an unknown user\tFAIL' "dirty: the failing test is named"
+assert_contains "$s10" $'coverage\tOK\t' "dirty: coverage collected"
+assert_file "$out/d9/tools/coverage/lcov.info" "dirty: lcov written under the work dir"
+assert_contains "$(cat "$out/d9/tools/coverage-changed.txt")" $'src/services/order_service.js\t' "dirty: changed-line coverage row for the service"
+[[ -e "$fx/dirty/coverage" ]] && fail "dirty: no coverage dir written into the repo" || pass
+c10=$(cat "$out/c9/tools/summary.txt")
+assert_contains "$c10" $'test\tOK\t' "clean: tests pass"
+assert_contains "$(grep $'^test\t' "$out/c9/tools/summary.txt")" "0 failing" "clean: zero failing"
+tot=$(tail -1 "$out/c9/tools/coverage-changed.txt"); tot=${tot#TOTAL=}
+[[ "${tot%%/*}" -gt 0 && "${tot%%/*}" == "${tot##*/}" ]] && pass || fail "clean: every changed line executed (got TOTAL=$tot)"
+
+# a fake vitest without a coverage provider: tests still classified, coverage UNAVAILABLE(no-coverage-provider)
+fv=$(tmpdir)
+git -C "$fv" init -q -b main
+git -C "$fv" config user.email fixture@example.com; git -C "$fv" config user.name fixture
+echo '{"name":"fv","type":"module","devDependencies":{"vitest":"^5.0.0"}}' > "$fv/package.json"
+: > "$fv/vitest.config.ts"; : > "$fv/package-lock.json"; printf 'node_modules\n' > "$fv/.gitignore"
+mkdir -p "$fv/node_modules/.bin" "$fv/src" "$fv/test"
+cat > "$fv/node_modules/.bin/vitest" <<EOF
+#!/bin/sh
+case " \$* " in *" --coverage.enabled "*) echo "Error: Cannot find module '@vitest/coverage-v8'" >&2; exit 1 ;; esac
+out=""
+for a in "\$@"; do case "\$a" in --outputFile=*) out=\${a#--outputFile=} ;; esac; done
+cp "$REPO_ROOT/tests/recordings/vitest-report.json" "\$out"
+exit 1
+EOF
+chmod +x "$fv/node_modules/.bin/vitest"
+echo 'export const x = 1;' > "$fv/src/calc.js"; echo 'import { x } from "../src/calc.js";' > "$fv/test/calc.test.js"
+git -C "$fv" add -A && git -C "$fv" commit -q -m base
+git -C "$fv" checkout -q -b feature/x
+echo 'export const y = 2;' >> "$fv/src/calc.js"
+git -C "$fv" add -A && git -C "$fv" commit -q -m change
+bash "$S/collect.sh" --repo "$fv" --base main --head feature/x --out "$out/fv"
+assert_contains "$(cat "$out/fv/tools/summary.txt")" $'test\tFAIL\t' "fake vitest: the recording's failure is reported"
+assert_contains "$(cat "$out/fv/tools/summary.txt")" $'coverage\tUNAVAILABLE(no-coverage-provider)' "fake vitest: missing provider is reported, tests still ran"
+assert_contains "$(cat "$out/fv/tools/test-classified.txt")" $'sub is wrong on purpose\tFAIL' "fake vitest: classification from the JSON report"
+
 # --- not a Node.js repo ---
 nn=$(tmpdir); git -C "$nn" init -q -b main; echo hi > "$nn/README.md"
 git -C "$nn" -c user.email=f@e -c user.name=f add -A; git -C "$nn" -c user.email=f@e -c user.name=f commit -q -m base

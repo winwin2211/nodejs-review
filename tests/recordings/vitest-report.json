@@ -1,0 +1,262 @@
+{
+  "numTotalTestSuites": 1,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 1,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 4,
+  "numPassedTests": 1,
+  "numFailedTests": 2,
+  "numPendingTests": 1,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1792912128944,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "add works",
+          "status": "passed",
+          "title": "add works",
+          "duration": 1.350750000000005,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "sub is wrong on purpose",
+          "status": "failed",
+          "title": "sub is wrong on purpose",
+          "duration": 3.9342089999999956,
+          "failureMessages": [
+            "AssertionError: expected 3 to be 2 // Object.is equality\n    at /repo/test/calc.test.js:8:21\n    at file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35\n    at file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26\n    at file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)\n    at file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)\n    at file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64"
+          ],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "db connects",
+          "status": "failed",
+          "title": "db connects",
+          "duration": 0.4535419999999988,
+          "failureMessages": [
+            "Error: connect ECONNREFUSED 127.0.0.1:5432\n    at connect (/repo/src/calc.js:11:9)\n    at /repo/test/calc.test.js:11:9\n    at file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35\n    at file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26\n    at file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)\n    at file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///repo/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)"
+          ],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "skipped one",
+          "status": "skipped",
+          "title": "skipped one",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1792912129077,
+      "endTime": 1792912129082.4536,
+      "status": "failed",
+      "message": "",
+      "name": "/repo/test/calc.test.js"
+    }
+  ],
+  "coverageMap": {
+    "/repo/src/calc.js": {
+      "path": "/repo/src/calc.js",
+      "statementMap": {
+        "0": {
+          "start": {
+            "line": 2,
+            "column": 2
+          },
+          "end": {
+            "line": 2,
+            "column": null
+          }
+        },
+        "1": {
+          "start": {
+            "line": 5,
+            "column": 2
+          },
+          "end": {
+            "line": 5,
+            "column": null
+          }
+        },
+        "2": {
+          "start": {
+            "line": 8,
+            "column": 2
+          },
+          "end": {
+            "line": 8,
+            "column": null
+          }
+        },
+        "3": {
+          "start": {
+            "line": 11,
+            "column": 2
+          },
+          "end": {
+            "line": 11,
+            "column": null
+          }
+        }
+      },
+      "fnMap": {
+        "0": {
+          "name": "add",
+          "decl": {
+            "start": {
+              "line": 1,
+              "column": 16
+            },
+            "end": {
+              "line": 1,
+              "column": 19
+            }
+          },
+          "loc": {
+            "start": {
+              "line": 1,
+              "column": 26
+            },
+            "end": {
+              "line": 3,
+              "column": null
+            }
+          },
+          "line": 1
+        },
+        "1": {
+          "name": "sub",
+          "decl": {
+            "start": {
+              "line": 4,
+              "column": 16
+            },
+            "end": {
+              "line": 4,
+              "column": 19
+            }
+          },
+          "loc": {
+            "start": {
+              "line": 4,
+              "column": 26
+            },
+            "end": {
+              "line": 6,
+              "column": null
+            }
+          },
+          "line": 4
+        },
+        "2": {
+          "name": "mul",
+          "decl": {
+            "start": {
+              "line": 7,
+              "column": 16
+            },
+            "end": {
+              "line": 7,
+              "column": 19
+            }
+          },
+          "loc": {
+            "start": {
+              "line": 7,
+              "column": 26
+            },
+            "end": {
+              "line": 9,
+              "column": null
+            }
+          },
+          "line": 7
+        },
+        "3": {
+          "name": "connect",
+          "decl": {
+            "start": {
+              "line": 10,
+              "column": 22
+            },
+            "end": {
+              "line": 10,
+              "column": 29
+            }
+          },
+          "loc": {
+            "start": {
+              "line": 10,
+              "column": 32
+            },
+            "end": {
+              "line": 12,
+              "column": null
+            }
+          },
+          "line": 10
+        }
+      },
+      "branchMap": {},
+      "s": {
+        "0": 1,
+        "1": 1,
+        "2": 0,
+        "3": 1
+      },
+      "f": {
+        "0": 1,
+        "1": 1,
+        "2": 0,
+        "3": 1
+      },
+      "b": {},
+      "meta": {
+        "lastBranch": 0,
+        "lastFunction": 4,
+        "lastStatement": 4,
+        "seen": {
+          "f:1:16:1:19": 0,
+          "s:2:2:2:Infinity": 0,
+          "f:4:16:4:19": 1,
+          "s:5:2:5:Infinity": 1,
+          "f:7:16:7:19": 2,
+          "s:8:2:8:Infinity": 2,
+          "f:10:22:10:29": 3,
+          "s:11:2:11:Infinity": 3
+        },
+        "fnNames": {}
+      }
+    }
+  }
+}

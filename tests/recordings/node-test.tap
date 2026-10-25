@@ -1,0 +1,71 @@
+TAP version 13
+# Subtest: postOrder returns 201 for a valid order
+ok 1 - postOrder returns 201 for a valid order
+  ---
+  duration_ms: 0.989541
+  ...
+# Subtest: postOrder returns 400 for an invalid quantity
+ok 2 - postOrder returns 400 for an invalid quantity
+  ---
+  duration_ms: 0.256791
+  ...
+# Subtest: getOrders returns 404 for an unknown user
+not ok 3 - getOrders returns 404 for an unknown user
+  ---
+  duration_ms: 0.872083
+  location: '/repo/test/order_handler.test.js:15:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    200 !== 404
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 404
+  actual: 200
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///repo/test/order_handler.test.js:17:10)
+    async Test.run (node:internal/test_runner/test:857:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:565:7)
+  ...
+# Subtest: placeOrder saves a valid order once
+ok 4 - placeOrder saves a valid order once
+  ---
+  duration_ms: 0.944917
+  ...
+# 'only' and 'runOnly' require the --test-only command-line option.
+# Subtest: placeOrder rejects qty 0 without saving
+ok 5 - placeOrder rejects qty 0 without saving
+  ---
+  duration_ms: 0.42775
+  ...
+# Subtest: placeOrder applies a coupon
+ok 6 - placeOrder applies a coupon
+  ---
+  duration_ms: 0.091792
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 5
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 90.525583
+# start of coverage report
+# --------------------------------------------------------------------------------------------------
+# file                          | line % | branch % | funcs % | uncovered lines
+# --------------------------------------------------------------------------------------------------
+# src/db.js                     |  62.50 |    57.14 |  100.00 | 7-8 10-11 13-14
+# src/handlers/order_handler.js |  83.33 |    66.67 |  100.00 | 12-13 20-21
+# src/repos/order_repo.js       | 100.00 |   100.00 |  100.00 | 
+# src/services/order_service.js |  81.43 |    68.00 |  100.00 | 12-13 45-47 50-51 53-54 57-58 60-61
+# test/order_handler.test.js    | 100.00 |   100.00 |  100.00 | 
+# test/order_service.test.js    | 100.00 |   100.00 |  100.00 | 
+# --------------------------------------------------------------------------------------------------
+# all files                     |  86.06 |    74.00 |  100.00 |
+# --------------------------------------------------------------------------------------------------
+# end of coverage report

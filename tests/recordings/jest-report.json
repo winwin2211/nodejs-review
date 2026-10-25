@@ -1,0 +1,284 @@
+{
+  "numFailedTestSuites": 1,
+  "numFailedTests": 2,
+  "numPassedTestSuites": 0,
+  "numPassedTests": 1,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 1,
+  "numRuntimeErrorTestSuites": 0,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 1,
+  "numTotalTests": 4,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1792911963352,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "duration": 1,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "add works",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 1,
+          "retryReasons": [],
+          "status": "passed",
+          "title": "add works"
+        },
+        {
+          "ancestorTitles": [],
+          "duration": 1,
+          "failureDetails": [
+            {
+              "matcherResult": {
+                "actual": 3,
+                "expected": 2,
+                "message": "expect(received).toBe(expected) // Object.is equality\n\nExpected: 2\nReceived: 3",
+                "name": "toBe",
+                "pass": false
+              }
+            }
+          ],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 2\nReceived: 3\n    at Object.toBe (/repo/test/calc.test.js:7:21)\n    at Promise.then.completed (/repo/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/repo/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/repo/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/repo/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/repo/node_modules/jest-circus/build/run.js:126:9)\n    at run (/repo/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/repo/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/repo/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/repo/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/repo/node_modules/jest-runner/build/runTest.js:444:34)"
+          ],
+          "fullName": "sub is wrong on purpose",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "failed",
+          "title": "sub is wrong on purpose"
+        },
+        {
+          "ancestorTitles": [],
+          "duration": 0,
+          "failureDetails": [
+            {}
+          ],
+          "failureMessages": [
+            "Error: connect ECONNREFUSED 127.0.0.1:5432\n    at connect (/repo/src/calc.js:11:9)\n    at Object.connect (/repo/test/calc.test.js:10:9)\n    at Promise.then.completed (/repo/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/repo/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/repo/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/repo/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/repo/node_modules/jest-circus/build/run.js:126:9)\n    at run (/repo/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/repo/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/repo/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/repo/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/repo/node_modules/jest-runner/build/runTest.js:444:34)"
+          ],
+          "fullName": "db connects",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "failed",
+          "title": "db connects"
+        },
+        {
+          "ancestorTitles": [],
+          "duration": null,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "skipped one",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "pending",
+          "title": "skipped one"
+        }
+      ],
+      "endTime": 1792911963555,
+      "message": "  ● sub is wrong on purpose\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: 2\n    Received: 3\n\n    \u001b[0m \u001b[90m  5 |\u001b[39m })\u001b[33m;\u001b[39m\n     \u001b[90m  6 |\u001b[39m test(\u001b[32m'sub is wrong on purpose'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  7 |\u001b[39m   expect(sub(\u001b[35m5\u001b[39m\u001b[33m,\u001b[39m \u001b[35m2\u001b[39m))\u001b[33m.\u001b[39mtoBe(\u001b[35m2\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m    |\u001b[39m                     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m  8 |\u001b[39m })\u001b[33m;\u001b[39m\n     \u001b[90m  9 |\u001b[39m test(\u001b[32m'db connects'\u001b[39m\u001b[33m,\u001b[39m \u001b[36masync\u001b[39m () \u001b[33m=>\u001b[39m {\n     \u001b[90m 10 |\u001b[39m   \u001b[36mawait\u001b[39m connect()\u001b[33m;\u001b[39m\u001b[0m\n\n      at Object.toBe (test/calc.test.js:7:21)\n\n  ● db connects\n\n    connect ECONNREFUSED 127.0.0.1:5432\n\n    \u001b[0m \u001b[90m  9 |\u001b[39m }\n     \u001b[90m 10 |\u001b[39m \u001b[36masync\u001b[39m \u001b[36mfunction\u001b[39m connect() {\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 11 |\u001b[39m   \u001b[36mthrow\u001b[39m \u001b[36mnew\u001b[39m \u001b[33mError\u001b[39m(\u001b[32m'connect ECONNREFUSED 127.0.0.1:5432'\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m    |\u001b[39m         \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 12 |\u001b[39m }\n     \u001b[90m 13 |\u001b[39m module\u001b[33m.\u001b[39mexports \u001b[33m=\u001b[39m { add\u001b[33m,\u001b[39m sub\u001b[33m,\u001b[39m mul\u001b[33m,\u001b[39m connect }\u001b[33m;\u001b[39m\n     \u001b[90m 14 |\u001b[39m\u001b[0m\n\n      at connect (src/calc.js:11:9)\n      at Object.connect (test/calc.test.js:10:9)\n",
+      "name": "/repo/test/calc.test.js",
+      "startTime": 1792911963374,
+      "status": "failed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false,
+  "coverageMap": {
+    "/repo/src/calc.js": {
+      "path": "/repo/src/calc.js",
+      "statementMap": {
+        "0": {
+          "start": {
+            "line": 2,
+            "column": 2
+          },
+          "end": {
+            "line": 2,
+            "column": 15
+          }
+        },
+        "1": {
+          "start": {
+            "line": 5,
+            "column": 2
+          },
+          "end": {
+            "line": 5,
+            "column": 15
+          }
+        },
+        "2": {
+          "start": {
+            "line": 8,
+            "column": 2
+          },
+          "end": {
+            "line": 8,
+            "column": 15
+          }
+        },
+        "3": {
+          "start": {
+            "line": 11,
+            "column": 2
+          },
+          "end": {
+            "line": 11,
+            "column": 57
+          }
+        },
+        "4": {
+          "start": {
+            "line": 13,
+            "column": 0
+          },
+          "end": {
+            "line": 13,
+            "column": 44
+          }
+        }
+      },
+      "fnMap": {
+        "0": {
+          "name": "add",
+          "decl": {
+            "start": {
+              "line": 1,
+              "column": 9
+            },
+            "end": {
+              "line": 1,
+              "column": 12
+            }
+          },
+          "loc": {
+            "start": {
+              "line": 1,
+              "column": 19
+            },
+            "end": {
+              "line": 3,
+              "column": 1
+            }
+          },
+          "line": 1
+        },
+        "1": {
+          "name": "sub",
+          "decl": {
+            "start": {
+              "line": 4,
+              "column": 9
+            },
+            "end": {
+              "line": 4,
+              "column": 12
+            }
+          },
+          "loc": {
+            "start": {
+              "line": 4,
+              "column": 19
+            },
+            "end": {
+              "line": 6,
+              "column": 1
+            }
+          },
+          "line": 4
+        },
+        "2": {
+          "name": "mul",
+          "decl": {
+            "start": {
+              "line": 7,
+              "column": 9
+            },
+            "end": {
+              "line": 7,
+              "column": 12
+            }
+          },
+          "loc": {
+            "start": {
+              "line": 7,
+              "column": 19
+            },
+            "end": {
+              "line": 9,
+              "column": 1
+            }
+          },
+          "line": 7
+        },
+        "3": {
+          "name": "connect",
+          "decl": {
+            "start": {
+              "line": 10,
+              "column": 15
+            },
+            "end": {
+              "line": 10,
+              "column": 22
+            }
+          },
+          "loc": {
+            "start": {
+              "line": 10,
+              "column": 25
+            },
+            "end": {
+              "line": 12,
+              "column": 1
+            }
+          },
+          "line": 10
+        }
+      },
+      "branchMap": {},
+      "s": {
+        "0": 1,
+        "1": 1,
+        "2": 0,
+        "3": 1,
+        "4": 1
+      },
+      "f": {
+        "0": 1,
+        "1": 1,
+        "2": 0,
+        "3": 1
+      },
+      "b": {},
+      "_coverageSchema": "1a1c01bbd47fc00a2c39e90264f33305004495a9",
+      "hash": "9e1e139b252abf5edfebf3f79d5e2c02075f85b2"
+    }
+  }
+}

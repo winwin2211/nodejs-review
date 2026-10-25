@@ -401,8 +401,73 @@ run_metrics() {
   if [[ "$n" -gt 0 ]]; then summary metrics FAIL "$line$note"; else summary metrics OK "$line$note"; fi
 }
 
+run_test() {
+  local reason=""
+  case "$RUNNER" in
+    none) reason="no-runner" ;;
+    mocha|ava|bun-test) reason="unsupported-runner" ;;
+  esac
+  if [[ -n "$reason" ]]; then summary test "UNAVAILABLE($reason)" "$RUNNER"; summary coverage "UNAVAILABLE($reason)" ""; return; fi
+  local tms f rel_src=() rel_test=() st report="" cov_note="" cmd=() cov=()
+  tms=$(runner_timeout_ms)
+  while IFS= read -r f; do rel_src+=("$f"); done < <(pkg_files "$OUT/changed-src-files.txt")
+  while IFS= read -r f; do rel_test+=("$f"); done < <(pkg_files "$OUT/changed-test-files.txt")
+  mkdir -p "$TOOLS_DIR/coverage"
+  case "$RUNNER" in
+    node-test)
+      report="$TOOLS_DIR/test.txt"
+      cmd=(node --test --test-reporter=tap --test-reporter-destination="$report" --experimental-test-coverage --test-reporter=lcov --test-reporter-destination="$TOOLS_DIR/coverage/lcov.info" --test-timeout="$tms")
+      st=$(cd "$PKG_ABS" && run_with_timeout "$T_TEST" "$TOOLS_DIR/test-stdout.txt" "${SCRUB[@]}" "${cmd[@]}")
+      ;;
+    vitest|jest)
+      if [[ "$NODE_MODULES" == absent ]]; then summary test "UNAVAILABLE($NM_REASON)" "$NM_HINT"; summary coverage "UNAVAILABLE($NM_REASON)" ""; return; fi
+      local bin; bin=$(find_bin "$RUNNER" "$PKG")
+      [[ -n "$bin" ]] || { summary test "UNAVAILABLE(no-runner-binary)" "$RUNNER not in node_modules/.bin"; summary coverage "UNAVAILABLE(no-runner-binary)" ""; return; }
+      report="$TOOLS_DIR/test.json"
+      if [[ $RUNNER == vitest ]]; then
+        local mode=(run)
+        [[ $FULL_TESTS -eq 0 && ${#rel_src[@]} -gt 0 ]] && mode=(related "${rel_src[@]}" ${rel_test[@]+"${rel_test[@]}"} --run)
+        cmd=("$bin" "${mode[@]}" --reporter=json --outputFile="$report" --testTimeout="$tms" --passWithNoTests)
+        # reportOnFailure: without it Vitest writes no coverage when any test fails
+        cov=(--coverage.enabled --coverage.reportOnFailure --coverage.reporter=lcov --coverage.reportsDirectory="$TOOLS_DIR/coverage")
+        st=$(cd "$PKG_ABS" && run_with_timeout "$T_TEST" "$TOOLS_DIR/test-stdout.txt" "${SCRUB[@]}" "${cmd[@]}" "${cov[@]}")
+        if [[ ! -f "$TOOLS_DIR/coverage/lcov.info" ]] && grep -qiE 'coverage' "$TOOLS_DIR/test-stdout.txt" && grep -qE 'Cannot find|MODULE_NOT_FOUND|not installed|Failed to load' "$TOOLS_DIR/test-stdout.txt"; then
+          cov_note="no-coverage-provider"
+          st=$(cd "$PKG_ABS" && run_with_timeout "$T_TEST" "$TOOLS_DIR/test-stdout.txt" "${SCRUB[@]}" "${cmd[@]}")
+        fi
+      else
+        cmd=("$bin" --ci --json --outputFile="$report" --coverage --coverageDirectory="$TOOLS_DIR/coverage" --coverageReporters=lcov --testTimeout="$tms" --passWithNoTests)
+        [[ $FULL_TESTS -eq 0 && ${#rel_src[@]} -gt 0 ]] && cmd+=(--findRelatedTests "${rel_src[@]}" ${rel_test[@]+"${rel_test[@]}"})
+        st=$(cd "$PKG_ABS" && run_with_timeout "$T_TEST" "$TOOLS_DIR/test-stdout.txt" "${SCRUB[@]}" "${cmd[@]}")
+      fi
+      ;;
+  esac
+  case $st in
+    TIMEOUT) summary test "UNAVAILABLE(timeout)" "${T_TEST}s"; summary coverage "UNAVAILABLE(timeout)" ""; return ;;
+    MISSING) summary test "UNAVAILABLE(missing)" "runner not executable"; summary coverage "UNAVAILABLE(missing)" ""; return ;;
+  esac
+  if [[ ! -s "$report" ]]; then
+    summary test "UNAVAILABLE(run-error)" "$(head -1 "$TOOLS_DIR/test-stdout.txt" 2>/dev/null | cut -c1-120)"; summary coverage "UNAVAILABLE(run-error)" ""; return
+  fi
+  local prefix=""; [[ "$PKG" != "." ]] && prefix="$PKG/"
+  bash "$HERE/classify-tests.sh" "$RUNNER" "$report" | sed "s#^$PKG_ABS/#$prefix#" > "$TOOLS_DIR/test-classified.txt"
+  local counts p fl n
+  counts=$(tail -1 "$TOOLS_DIR/test-classified.txt")
+  p=$(sed -E 's/.*PASS=([0-9]+).*/\1/' <<<"$counts"); fl=$(sed -E 's/.*FAIL=([0-9]+).*/\1/' <<<"$counts"); n=$(sed -E 's/.*NOT_RUNNABLE=([0-9]+).*/\1/' <<<"$counts")
+  [[ $MULTI -eq 1 ]] && grep -v '^PASS=' "$TOOLS_DIR/test-classified.txt" >> "$OUT/tools/test-classified.txt"
+  local detail="$p pass, $fl failing, $n not runnable locally (scrubbed env)"
+  if [[ "$fl" -gt 0 ]]; then summary test FAIL "$detail"; else summary test OK "$detail"; fi
+  if [[ -n "$cov_note" ]]; then summary coverage "UNAVAILABLE($cov_note)" "install @vitest/coverage-v8 in the repo"; return; fi
+  [[ -f "$TOOLS_DIR/coverage/lcov.info" ]] || { summary coverage "UNAVAILABLE(no-lcov)" "runner wrote no lcov.info"; return; }
+  bash "$HERE/coverage-changed.sh" "$TOOLS_DIR/coverage/lcov.info" "$OUT/added-lines.tsv" "$REPO" "$PKG" > "$TOOLS_DIR/coverage-changed.txt"
+  local tot; tot=$(tail -1 "$TOOLS_DIR/coverage-changed.txt"); tot=${tot#TOTAL=}
+  [[ $MULTI -eq 1 ]] && grep -v '^TOTAL=' "$TOOLS_DIR/coverage-changed.txt" >> "$OUT/tools/coverage-changed.txt"
+  summary coverage OK "$tot changed lines"
+}
+
 if [[ $MULTI -eq 1 ]]; then
   : > "$OUT/tools/typecheck-new.txt"; : > "$OUT/tools/metrics.tsv"; : > "$OUT/tools/metrics-preexisting.tsv"; echo '[]' > "$OUT/tools/lint-changed.json"
+  : > "$OUT/tools/test-classified.txt"; : > "$OUT/tools/coverage-changed.txt"
 fi
 for PKG in "${PKG_LIST[@]}"; do
   PKG_ABS=$(cd "$REPO/$PKG" && pwd -P)
@@ -417,5 +482,6 @@ for PKG in "${PKG_LIST[@]}"; do
   run_typecheck
   run_lint
   run_metrics
-  for t in test coverage audit; do summary "$t" "UNAVAILABLE(not-implemented)" ""; done
+  run_test
+  summary audit "UNAVAILABLE(not-implemented)" ""
 done

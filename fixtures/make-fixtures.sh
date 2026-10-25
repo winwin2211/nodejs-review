@@ -484,6 +484,10 @@ test('getOrders returns 404 for an unknown user', async () => {
   assert.equal(res.status, 404);
   assert.match(res.body.error, /unknown user nobody/);
 });
+
+test('getOrders lets a repository failure propagate', async () => {
+  await assert.rejects(getOrders({ params: { id: 'fail' } }), /connection reset/);
+});
 EOF
 mkdir -p "$C/docs/superpowers/specs" "$C/docs/superpowers/plans"
 cat > "$C/docs/superpowers/specs/2026-10-01-NR-100-orders-design.md" <<'EOF'
