@@ -45,10 +45,15 @@ case "$RUNNER" in
     echo "PASS=$pass FAIL=$fail NOT_RUNNABLE=$nr SKIP=$skip"
     ;;
   node-test)
+    # Subtests of describe() are indented: a test is `not ok N - name` at any
+    # depth, its YAML sits two spaces deeper, and a suite row (type 'suite' or
+    # failureType 'subtestsFailed') stands for its children, so it is no row.
     awk -v re="$NODE_NOT_RUNNABLE_RE" '
       function strip_quotes(s) { sub(/^'"'"'/, "", s); sub(/'"'"'$/, "", s); return s }
       function flush(   n, lines, last, i, cls) {
         if (!inblock) return
+        inblock = 0
+        if (suite) return
         last = ""
         n = split(err, lines, "\n")
         for (i = 1; i <= n; i++) if (lines[i] ~ /[^[:space:]]/ && lines[i] !~ /^[[:space:]]*at /) last = lines[i]
@@ -56,17 +61,24 @@ case "$RUNNER" in
         cls = (last ~ re || code ~ re) ? "NOT_RUNNABLE" : "FAIL"
         if (cls == "FAIL") failn++; else nrn++
         print (loc == "" ? "?" : loc) "\t" name "\t" cls
-        inblock = 0
       }
-      /^not ok [0-9]+ - / { flush(); inblock = 1; name = $0; sub(/^not ok [0-9]+ - /, "", name); sub(/ # (SKIP|TODO).*$/, "", name); loc = ""; err = ""; code = ""; inerr = 0; next }
-      /^ok [0-9]+ - / { flush(); next }
-      inblock && /^  location: / { loc = $0; sub(/^  location: /, "", loc); loc = strip_quotes(loc); sub(/:[0-9]+:[0-9]+$/, "", loc); next }
-      inblock && /^  error: \|-?$/ { inerr = 1; err = ""; next }
-      inblock && /^  error: / { inerr = 0; err = $0; sub(/^  error: /, "", err); err = strip_quotes(err); next }
-      inblock && inerr && /^    / { l = $0; sub(/^    /, "", l); err = err (err == "" ? "" : "\n") l; next }
-      inblock && /^  code: / { inerr = 0; code = $0; sub(/^  code: /, "", code); code = strip_quotes(code); next }
-      inblock && /^  [A-Za-z_]+: / { inerr = 0; next }
-      inblock && /^  \.\.\.$/ { flush(); next }
+      /^ *not ok [0-9]+ - / {
+        flush(); inblock = 1; match($0, /^ */); pre = sprintf("%" (RLENGTH + 2) "s", "")
+        name = $0; sub(/^ *not ok [0-9]+ - /, "", name); sub(/ # (SKIP|TODO).*$/, "", name)
+        loc = ""; err = ""; code = ""; inerr = 0; suite = 0; next
+      }
+      /^ *ok [0-9]+ - / { flush(); next }
+      inblock && index($0, pre) == 1 {
+        l = substr($0, length(pre) + 1)
+        if (l ~ /^location: /) { inerr = 0; loc = l; sub(/^location: /, "", loc); loc = strip_quotes(loc); sub(/:[0-9]+:[0-9]+$/, "", loc); next }
+        if (l ~ /^error: \|-?$/) { inerr = 1; err = ""; next }
+        if (l ~ /^error: /) { inerr = 0; err = l; sub(/^error: /, "", err); err = strip_quotes(err); next }
+        if (inerr && l ~ /^  /) { sub(/^  /, "", l); err = err (err == "" ? "" : "\n") l; next }
+        if (l ~ /^code: /) { inerr = 0; code = l; sub(/^code: /, "", code); code = strip_quotes(code); next }
+        if (l ~ /^type: .suite.$/ || l ~ /^failureType: .subtestsFailed.$/) { inerr = 0; suite = 1; next }
+        if (l ~ /^[A-Za-z_]+: /) { inerr = 0; next }
+        if (l ~ /^\.\.\.$/) { flush(); next }
+      }
       /^# pass [0-9]+/ { pass = $3 + 0 }
       /^# fail [0-9]+/ { failt = $3 + 0 }
       /^# skipped [0-9]+/ { skipc = $3 + 0 }

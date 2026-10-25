@@ -58,6 +58,16 @@ bash "$S/classify-tests.sh" node-test "$d/env.tap" > "$d/env.txt"
 assert_contains "$(cat "$d/env.txt")" $'/repo/test/db.test.js\tconnects to the database\tNOT_RUNNABLE' "node-test: ECONNREFUSED in the error block is NOT_RUNNABLE"
 assert_eq "PASS=0 FAIL=0 NOT_RUNNABLE=1 SKIP=2" "$(tail -1 "$d/env.txt")" "node-test: skipped and todo both count as SKIP"
 
+# describe() nests subtests by indentation: each failing test is a row, a suite row
+# (type 'suite', failureType 'subtestsFailed') is not, and the YAML is read at the test's indent
+bash "$S/classify-tests.sh" node-test "$REC/node-test-describe.tap" > "$d/describe.txt"
+body=$(grep -v '^PASS=' "$d/describe.txt")
+assert_contains "$body" $'/repo/test/orders.test.mjs\tneeds the database\tNOT_RUNNABLE' "describe: an ECONNREFUSED subtest is NOT_RUNNABLE"
+assert_contains "$body" $'/repo/test/orders.test.mjs\tadds totals\tFAIL' "describe: an assertion subtest is FAIL, by name"
+assert_contains "$body" $'/repo/test/orders.test.mjs\tdeep fails\tFAIL' "describe: a test two levels deep is found"
+assert_eq "3" "$(printf '%s\n' "$body" | grep -c .)" "describe: suites are not rows"
+assert_eq "PASS=1 FAIL=2 NOT_RUNNABLE=1 SKIP=0" "$(tail -1 "$d/describe.txt")" "describe: counts"
+
 # a failure that merely logs a connection error but ends on an assertion is FAIL
 jq '.testResults[0].assertionResults[1].failureMessages = ["Error: connect ECONNREFUSED 127.0.0.1:9 (retry 1)\nAssertionError: expected 2 to be 3\n    at /repo/test/calc.test.js:9:1"]' "$REC/vitest-report.json" > "$d/mixed.json"
 bash "$S/classify-tests.sh" vitest "$d/mixed.json" > "$d/mixed.txt"
