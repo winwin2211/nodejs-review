@@ -169,11 +169,19 @@ repo ("not a Node.js repo").
 `changed-files.txt`, `changed-src-files.txt` (`.ts .tsx .js .mjs .cjs .mts
 .cts`, excluding test files), `changed-test-files.txt` (`*.test.*`,
 `*.spec.*`, `__tests__/**`, `test/**`, `tests/**`), `changed-packages.txt`
-(workspace package directories owning changed files; `.` for a single-package
-repo), `changed-symbols.txt` (added or changed `export`, `function`, `class`,
+(workspace package names owning changed files; for a single-package repo the
+basenames of the changed source directories, e.g. `services`, `repos`, so
+the spec-matching package signal has something as specific as a Go package
+name to match on), `changed-symbols.txt` (added or changed `export`, `function`, `class`,
 `const … = (` and method declarations), `nontest-lines.txt`, `stack.env`, and
 `tools/*` with one row per tool in `tools/summary.txt`
 (`name<TAB>OK|FAIL|UNAVAILABLE(reason)<TAB>detail`).
+
+When more than one workspace package owns changed files (up to four), the
+tool steps run once per package with that package as the working directory,
+write under `tools/<package>/`, and `tools/summary.txt` carries one row per
+tool per package with the package name leading the detail; the report's
+Tools line is then repeated per package.
 
 Tools, each with its own timeout (`NODEJS_REVIEW_TIMEOUT_<TOOL>` overrides)
 and run **only from the reviewed package's own `node_modules/.bin`** — never
@@ -184,10 +192,10 @@ which is exactly the situation a review runs in:
 | Tool | Command shape | Evidence |
 |---|---|---|
 | typecheck | `tsc --noEmit -p <tsconfig>` with flags chosen from `tsc --showConfig` so no `.tsbuildinfo` lands in the repo | errors present at head and absent at the merge-base ("Baseline comparison" below) are rule-based BLOCKERs wherever they occur, since a changed signature breaks unchanged callers; errors also present at base are listed as pre-existing |
-| lint | repo's ESLint (`-f json -o $WORK/tools/lint.json`, no `--fix`, no `--cache`) or Biome (`lint --reporter=json`); fallback: toolbelt ESLint with `eslint.strict.config.js` when `LINTER=none` | `lint-changed.sh` keeps only messages whose line falls in a changed hunk; count in header; messages are evidence for agents, not findings |
+| lint | repo's ESLint (`-f json -o $WORK/tools/lint.json`, no `--fix`, no `--cache`) or Biome (`lint --reporter=json`); fallback: toolbelt ESLint with `eslint.strict.config.js` when `LINTER=none` | `lint-changed.sh` keeps only ESLint messages whose line falls in a changed hunk; count in header; messages are evidence for agents, not findings. Biome output is kept whole (its JSON reports byte spans, not lines) and the header says `biome, unfiltered` |
 | metrics | toolbelt ESLint with `eslint.metrics.config.js` on `changed-src-files.txt` only (`complexity`, `max-depth`, `max-lines-per-function`, `max-params`, `max-nested-callbacks`, `sonarjs/cognitive-complexity`, `no-magic-numbers`), plus `jscpd` over changed files against the package with output under `$WORK` | rule-based clean-code findings per `checklist-clean-code.md` thresholds |
 | test | Vitest: `vitest run --reporter=json --outputFile=$WORK/tools/test.json --coverage.enabled --coverage.reporter=lcov --coverage.reportsDirectory=$WORK/tools/coverage`, scoped with `vitest related <changed files>` unless `--full-tests`; Jest: `jest --ci --json --outputFile=… --coverage --coverageDirectory=… --coverageReporters=lcov`, scoped with `--findRelatedTests` unless `--full-tests`; `node:test`: `node --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=$WORK/tools/test.txt --test-reporter=lcov --test-reporter-destination=$WORK/tools/coverage/lcov.info` | per-test pass/fail from the JSON/spec report; `coverage-changed.sh` turns lcov `DA:` lines into uncovered changed lines per file |
-| audit | `npm audit --json` / `pnpm audit --json` / `yarn npm audit --json` / `bun audit`, run only when `package.json` or the lockfile is in the diff, or with `--full-audit` | high/critical advisories whose dependency was added or upgraded by this change are rule-based BLOCKERs; the rest go to pre-existing. The audit sends the dependency list to the registry; the header says when it ran. |
+| audit | `npm audit --json` or `pnpm audit --json` (yarn and bun are `UNAVAILABLE(unsupported-audit)` in this iteration), run only when `package.json` or the lockfile is in the diff, or with `--full-audit` | high/critical advisories whose dependency was added or upgraded by this change are rule-based BLOCKERs; the rest go to pre-existing. The audit sends the dependency list to the registry; the header says when it ran. |
 
 Baseline comparison. Typecheck and metrics are the two tools whose findings
 depend on what was already true before the change: a `tsc` error in an
@@ -233,8 +241,9 @@ runs everything. Coverage is therefore "coverage by the tests that exercise
 this change", which is the question the TDD dimension asks.
 
 MR mode and `node_modules`: the temporary worktree has none. When the
-lockfile at the MR head is identical to the one in the user's checkout, the
-checkout's `node_modules` is symlinked into the worktree (a write under
+lockfile at the MR head is identical to the one in the user's checkout,
+`collect.sh` (which knows both trees through `--repo` and `--status-repo`)
+symlinks the checkout's `node_modules` into the worktree (a write under
 `$WORK`, not under the repo) and tools run normally; the header says so.
 When it differs, tools are `UNAVAILABLE(lockfile-differs)` with the hint
 `--install`, which runs `<pm> install` in frozen-lockfile mode with
@@ -543,10 +552,14 @@ the skill).
   `node_modules/.bin` up to the workspace root's; the first hit wins. pnpm
   and yarn workspaces hoist most binaries to the root, so "the package's
   own" alone would mark them UNAVAILABLE.
-- `changed-packages.txt` holds package names (the `name` field, falling back
-  to the directory basename), never `.`: the shared `find-specs.sh` uses the
+- `changed-packages.txt` never holds `.`: the shared `find-specs.sh` uses the
   basename of each entry as a body-match token, and `.` would match every
-  candidate.
+  candidate. Workspaces contribute package names (the `name` field, falling
+  back to the directory basename); a single-package repo contributes the
+  basenames of its changed source directories.
+- The scrubbed environment is passed as the `env -i …` command prefix to the
+  timeout wrapper, not as a shell function: `run_with_timeout` `exec`s its
+  arguments, so a function name there would fail to execute.
 - Rule-based tool findings (typecheck, failing tests, audit, metrics) are
   emitted by the orchestrator in step 3 from `tools/*`, as in go-review's
   workflow; agents cite tool output as evidence but never restate it.
