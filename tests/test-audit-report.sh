@@ -29,6 +29,12 @@ assert_contains "$(cat "$d/out.tsv")" $'lodash\t4.17.20\thigh\tGHSA-p6mc-m468-83
 assert_contains "$(cat "$d/out.tsv")" $'minimist\t1.2.5\tmoderate\tGHSA-xvch-5gv4-984h\tpreexisting' "npm: minimist unchanged -> pre-existing"
 assert_contains "$(cat "$d/out.tsv")" $'left-pad\t1.3.0\tlow\tvia minimist\tpreexisting' "npm: a transitive via-only entry names its parent advisory"
 
+# collect.sh saves the merge-base lockfile without an extension (tools/lock-base):
+# the format comes from the content, so the npm lockfile is still read as JSON
+cp "$d/base-lock.json" "$d/lock-base"
+line=$(bash "$S/audit-report.sh" npm "$d/audit.json" "$d/head-lock.json" "$d/lock-base" "$d/out1b.tsv")
+assert_eq "1 introduced (1 high/critical), 2 pre-existing" "$line" "npm: a base lockfile saved without .json is still parsed as JSON"
+
 # no base lockfile (the change added it): everything is introduced
 line=$(bash "$S/audit-report.sh" npm "$d/audit.json" "$d/head-lock.json" - "$d/out2.tsv")
 assert_eq "3 introduced (1 high/critical), 0 pre-existing" "$line" "npm: without a base lockfile every advisory is introduced"
@@ -47,6 +53,9 @@ assert_contains "$(cat "$d/out3.tsv")" $'lodash\t4.17.20\tcritical\tGHSA-p6mc-m4
 printf "lockfileVersion: '9.0'\n\npackages:\n\n  lodash@4.17.20:\n    resolution: {integrity: sha512-x}\n" > "$d/base-pnpm-same.yaml"
 line=$(bash "$S/audit-report.sh" pnpm "$d/pnpm-audit.json" "$d/head-pnpm.yaml" "$d/base-pnpm-same.yaml" "$d/out4.tsv")
 assert_eq "0 introduced (0 high/critical), 1 pre-existing" "$line" "pnpm: same version at base -> pre-existing"
+cp "$d/base-pnpm-same.yaml" "$d/lock-base-pnpm"
+line=$(bash "$S/audit-report.sh" pnpm "$d/pnpm-audit.json" "$d/head-pnpm.yaml" "$d/lock-base-pnpm" "$d/out4b.tsv")
+assert_eq "0 introduced (0 high/critical), 1 pre-existing" "$line" "pnpm: a base lockfile saved without .yaml is still parsed as YAML"
 
 # clean audit, unsupported manager, invalid json
 echo '{ "auditReportVersion": 2, "vulnerabilities": {}, "metadata": {} }' > "$d/clean.json"

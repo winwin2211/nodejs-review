@@ -17,11 +17,12 @@ case "$PM" in npm|pnpm) ;; *) echo "audit-report.sh: unsupported package manager
 jq -e 'type == "object" and (has("vulnerabilities") or has("advisories"))' "$AUDIT" >/dev/null 2>&1 ||
   { echo "audit-report.sh: not an audit report: $AUDIT" >&2; exit 1; }
 
-# version of NAME in a lockfile: npm lockfile v2/v3 by node path or name; pnpm-lock.yaml by `name@ver` / `/name/ver` keys
+# version of NAME in a lockfile: npm lockfile v2/v3 by node path or name; pnpm-lock.yaml by `name@ver` / `/name/ver` keys.
+# The format is read from the content: collect.sh saves the merge-base lockfile without its extension.
 lock_version() { # LOCK NAME NODEPATH
   local lock=$1 name=$2 node=$3 v=""
   [[ "$lock" != "-" && -f "$lock" ]] || { echo ""; return; }
-  if [[ "$lock" == *.json ]]; then
+  if jq -e 'type == "object"' "$lock" >/dev/null 2>&1; then
     v=$(jq -r --arg p "$node" --arg n "$name" '(.packages[$p].version // .packages["node_modules/" + $n].version // .dependencies[$n].version // "")' "$lock" 2>/dev/null || true)
   else
     local esc; esc=$(printf '%s' "$name" | sed 's/[][\\.^$*+?(){}|]/\\&/g')
