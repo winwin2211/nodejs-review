@@ -54,7 +54,8 @@ awk -F'\t' -v OFS='\t' -v hasbase="$HAS_BASE" -v headroot="$HEAD_ROOT" -v basero
   function value(rule, msg,   s) {
     if (rule == "sonarjs/cognitive-complexity") { if (match(msg, /from [0-9]+ to/)) return digits(substr(msg, RSTART, RLENGTH)) }
     else if (rule == "complexity") { if (match(msg, /complexity of [0-9]+/)) return digits(substr(msg, RSTART, RLENGTH)) }
-    else if (rule == "no-magic-numbers") { if (match(msg, /: -?[0-9]+(\.[0-9]+)?/)) return digits(substr(msg, RSTART, RLENGTH)) }
+    # the literal as written (0x56cd, 1e-3, 1_000, 10n), minus the trailing full stop
+    else if (rule == "no-magic-numbers") { if (match(msg, /: -?[0-9][0-9A-Za-z_.+-]*$/)) { s = substr(msg, RSTART + 2); sub(/\.$/, "", s); return s } }
     else if (match(msg, /\([0-9]+\)/)) return digits(substr(msg, RSTART, RLENGTH))
     return "?"
   }

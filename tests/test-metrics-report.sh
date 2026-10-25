@@ -109,6 +109,28 @@ assert_eq "preexisting" "$(at 6 complexity 8 "$d/o4/metrics-preexisting.tsv")" "
 assert_eq "-" "$(at 10 max-depth 7 "$d/o4/metrics.tsv")" "statement-level rows have no function: -"
 assert_eq "(anonymous)" "$(at 12 complexity 7 "$d/o4/metrics.tsv")" "a function-level row without a name says (anonymous)"
 
+# no-magic-numbers: the value column is the literal as written, in every numeric form
+mkdir -p "$d/o5"
+cat > "$d/head5.json" <<EOF
+[{"filePath": "$repo/src/lits.js", "messages": [
+  {"ruleId": "no-magic-numbers", "severity": 1, "message": "No magic number: 0x56cd.", "line": 1, "column": 9},
+  {"ruleId": "no-magic-numbers", "severity": 1, "message": "No magic number: 1e-3.", "line": 2, "column": 9},
+  {"ruleId": "no-magic-numbers", "severity": 1, "message": "No magic number: -5.", "line": 3, "column": 9},
+  {"ruleId": "no-magic-numbers", "severity": 1, "message": "No magic number: 1_000.", "line": 4, "column": 9},
+  {"ruleId": "no-magic-numbers", "severity": 1, "message": "No magic number: 10n.", "line": 5, "column": 9},
+  {"ruleId": "no-magic-numbers", "severity": 1, "message": "No magic number: 0.66.", "line": 6, "column": 9}
+]}]
+EOF
+printf 'src/lits.js\t%s\n' 1 2 3 4 5 6 > "$d/added5.tsv"
+bash "$S/metrics-report.sh" "$d/head5.json" "$repo" - - - "$d/added5.tsv" "$d/o5" >/dev/null
+lit() { awk -F'\t' -v l="$1" '$1 == "src/lits.js" && $2 == l && $3 == "no-magic-numbers" { print $4 }' "$d/o5/metrics.tsv"; }
+assert_eq "0x56cd" "$(lit 1)" "magic number: a hex literal is reported as written, not as 0"
+assert_eq "1e-3" "$(lit 2)" "magic number: an exponent literal keeps its exponent"
+assert_eq "-5" "$(lit 3)" "magic number: a negative literal keeps its sign"
+assert_eq "1_000" "$(lit 4)" "magic number: numeric separators are kept"
+assert_eq "10n" "$(lit 5)" "magic number: a BigInt literal keeps its suffix"
+assert_eq "0.66" "$(lit 6)" "magic number: a decimal loses only the message's full stop"
+
 # empty head report
 echo '[]' > "$d/empty.json"
 s=$(bash "$S/metrics-report.sh" "$d/empty.json" "$repo" - - - "$d/added.tsv" "$d/o3")
