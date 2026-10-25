@@ -334,6 +334,10 @@ run_typecheck() {
   if [[ "$NODE_MODULES" == absent ]]; then summary typecheck "UNAVAILABLE($NM_REASON)" "$NM_HINT"; return; fi
   local tsc; tsc=$(find_bin tsc "$PKG")
   [[ -n "$tsc" ]] || { summary typecheck "UNAVAILABLE(no-binary)" "tsc not in node_modules/.bin"; return; }
+  # a solution-style tsconfig (`"files": []` plus references) makes tsc exit 0 having checked nothing
+  if (cd "$PKG_ABS" && "$tsc" -p tsconfig.json --showConfig 2>/dev/null | jq -e '((.files // []) | length) == 0 and ((.references // []) | length) > 0' >/dev/null 2>&1); then
+    summary typecheck "UNAVAILABLE(solution-tsconfig)" "tsconfig.json only references other projects; rerun with --package <dir>"; return
+  fi
   local extra=() l; while IFS= read -r l; do extra+=("$l"); done < <(tsc_flags "$tsc" "$PKG_ABS" head)
   local s0=$SECONDS st
   st=$(cd "$PKG_ABS" && run_with_timeout "$T_TYPECHECK" "$TOOLS_DIR/typecheck.txt" "$tsc" --noEmit -p tsconfig.json --pretty false ${extra[@]+"${extra[@]}"})
@@ -341,6 +345,10 @@ run_typecheck() {
     TIMEOUT) summary typecheck "UNAVAILABLE(timeout)" "${T_TYPECHECK}s"; return ;;
     MISSING) summary typecheck "UNAVAILABLE(missing)" "tsc not executable"; return ;;
   esac
+  # a failed run with no file(line,col) error checked nothing (TS18003 no inputs, a bad option)
+  if [[ $st == FAIL && "$(count_ts_errors "$TOOLS_DIR/typecheck.txt")" -eq 0 ]]; then
+    summary typecheck "UNAVAILABLE(tsc-error)" "$({ grep -m1 -E '^error TS[0-9]+' "$TOOLS_DIR/typecheck.txt" || head -1 "$TOOLS_DIR/typecheck.txt"; } | cut -c1-120)"; return
+  fi
   local base_file="-" note=""
   if [[ -n "$BASELINE" ]]; then note=", no-baseline($BASELINE)"
   elif [[ ! -f "$BASE_WT/$PKG/tsconfig.json" ]]; then note=", no-baseline(new-package)"

@@ -106,6 +106,24 @@ r=$(ASSERT_CLEAN_PRUNE=node_modules bash "$S/assert-clean.sh" --repo "$fx/ts" --
 assert_eq "No artifacts left: verified" "$r" "ts: incremental tsc left no .tsbuildinfo in the repo"
 assert_contains "$(cat "$out/d/tools/summary.txt" 2>/dev/null; bash "$S/collect.sh" --repo "$fx/dirty" --base main --head feature/NR-100-orders --out "$out/d2" >/dev/null; cat "$out/d2/tools/summary.txt")" $'typecheck\tUNAVAILABLE(not-typescript)' "dirty: no TypeScript, no typecheck"
 
+# tsc that checked nothing is never `typecheck OK`: a global error (TS18003, no
+# file prefix) and a solution-style tsconfig (only references) are UNAVAILABLE
+for kind in global solution; do
+  tg=$(tmpdir); git -C "$tg" init -q -b main; mkdir -p "$tg/src" "$tg/node_modules/.bin"
+  echo '{ "name": "tg", "type": "module", "devDependencies": { "typescript": "5" } }' > "$tg/package.json"; printf 'node_modules\n' > "$tg/.gitignore"
+  ln -s "$REPO_ROOT/skill/toolbelt/node_modules/typescript/bin/tsc" "$tg/node_modules/.bin/tsc"
+  if [[ $kind == global ]]; then echo '{ "include": ["lib"] }' > "$tg/tsconfig.json"
+  else echo '{ "files": [], "references": [{ "path": "./src" }] }' > "$tg/tsconfig.json"; echo '{ "compilerOptions": { "composite": true } }' > "$tg/src/tsconfig.json"; fi
+  printf 'export const x: number = 1;\n' > "$tg/src/x.ts"
+  git -C "$tg" -c user.email=f@e -c user.name=f add -A; git -C "$tg" -c user.email=f@e -c user.name=f commit -q -m base
+  printf 'export const x: number = "oops";\n' > "$tg/src/x.ts"
+  bash "$S/collect.sh" --repo "$tg" --base main --head WORKTREE --out "$out/tg-$kind" >/dev/null 2>&1
+  row=$(grep $'^typecheck\t' "$out/tg-$kind/tools/summary.txt")
+  assert_not_contains "$row" $'\tOK\t' "tsc $kind: not reported OK"
+done
+assert_contains "$(grep $'^typecheck\t' "$out/tg-global/tools/summary.txt")" $'UNAVAILABLE(tsc-error)\terror TS18003' "tsc global: UNAVAILABLE(tsc-error) with the error"
+assert_contains "$(grep $'^typecheck\t' "$out/tg-solution/tools/summary.txt")" "UNAVAILABLE(solution-tsconfig)" "tsc solution: UNAVAILABLE(solution-tsconfig)"
+
 # multi-package: one typecheck row per package, outputs under tools/<slug>/
 mp=$(tmpdir)
 git -C "$mp" init -q -b main
