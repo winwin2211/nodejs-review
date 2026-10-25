@@ -18,7 +18,12 @@ done
 # dirty: seeded defects are where the plan says, and the suite fails
 ( cd "$out/dirty" && node --test >/dev/null 2>&1 ) && fail "dirty suite must fail (handler test)" || pass
 grep -q 'test\.only' "$out/dirty/test/order_service.test.js" && pass || fail "dirty has test.only"
-grep -qF "WHERE user = '\${user}'" "$out/dirty/src/repos/order_repo.js" && pass || fail "dirty has SQL concatenation"
+grep -qF "WHERE user_id = '\${user}'" "$out/dirty/src/repos/order_repo.js" && pass || fail "dirty has SQL concatenation"
+# `user` is a reserved word in PostgreSQL (the fixtures use $1 placeholders): an
+# unquoted `user` column is a real defect, and clean must have none
+for n in dirty clean; do
+  grep -rnE '\(id, user,|WHERE user = ' "$out/$n/src" && fail "$n: SQL uses the reserved word user as a column" || pass
+done
 grep -q 'eslint-disable' "$out/dirty/src/repos/order_repo.js" && pass || fail "dirty has an eslint-disable without reason"
 grep -q 'repos/order_repo.js' "$out/dirty/src/handlers/order_handler.js" && pass || fail "dirty handler imports the repo directly"
 grep -q 'repo.fetchUser(id)' "$out/dirty/src/handlers/order_handler.js" && pass || fail "dirty handler has the un-awaited fetchUser"

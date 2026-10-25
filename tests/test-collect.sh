@@ -23,7 +23,7 @@ assert_contains "$tst" "test/order_handler.test.js" "second test file in test li
 assert_contains "$(cat "$out/d/changed-symbols.txt")" "placeOrder" "changed symbol listed"
 assert_contains "$(cat "$out/d/changed-symbols.txt")" "legacyDiscount" "new exported function listed"
 [[ "$(cat "$out/d/nontest-lines.txt")" -gt 50 ]] && pass || fail "nontest-lines > 50 (got $(cat "$out/d/nontest-lines.txt"))"
-sqlline=$(grep -nF "WHERE user = '\${user}'" "$fx/dirty/src/repos/order_repo.js" | cut -d: -f1)
+sqlline=$(grep -nF "WHERE user_id = '\${user}'" "$fx/dirty/src/repos/order_repo.js" | cut -d: -f1)
 assert_contains "$(cat "$out/d/added-lines.tsv")" $'src/repos/order_repo.js\t'"$sqlline" "added-lines has the SQL concat line"
 assert_not_contains "$(cat "$out/d/added-lines.tsv")" $'test/order_service.test.js\t0' "added-lines never emits line 0"
 pk=$(cat "$out/d/changed-packages.txt")

@@ -57,7 +57,7 @@ EOF
 import { query } from '../db.js';
 
 export async function save(order) {
-  await query('INSERT INTO orders (id, user, qty) VALUES ($1, $2, $3)', [order.id, order.user, order.qty]);
+  await query('INSERT INTO orders (id, user_id, qty) VALUES ($1, $2, $3)', [order.id, order.user, order.qty]);
   return order;
 }
 EOF
@@ -138,7 +138,7 @@ cat > "$D/src/repos/order_repo.js" <<'EOF'
 import { query } from '../db.js';
 
 export async function save(order) {
-  await query('INSERT INTO orders (id, user, qty) VALUES ($1, $2, $3)', [order.id, order.user, order.qty]);
+  await query('INSERT INTO orders (id, user_id, qty) VALUES ($1, $2, $3)', [order.id, order.user, order.qty]);
   return order;
 }
 
@@ -149,7 +149,7 @@ export async function fetchUser(id) {
 
 export async function listOrders(user) {
   // eslint-disable-next-line
-  return query(`SELECT * FROM orders WHERE user = '${user}'`);
+  return query(`SELECT * FROM orders WHERE user_id = '${user}'`);
 }
 EOF
 
@@ -338,7 +338,7 @@ cat > "$C/src/repos/order_repo.js" <<'EOF'
 import { query } from '../db.js';
 
 export async function save(order) {
-  await query('INSERT INTO orders (id, user, qty) VALUES ($1, $2, $3)', [order.id, order.user, order.qty]);
+  await query('INSERT INTO orders (id, user_id, qty) VALUES ($1, $2, $3)', [order.id, order.user, order.qty]);
   return order;
 }
 
@@ -348,7 +348,7 @@ export async function fetchUser(id) {
 }
 
 export async function listOrders(userId) {
-  return query('SELECT * FROM orders WHERE user = $1', [userId]);
+  return query('SELECT * FROM orders WHERE user_id = $1', [userId]);
 }
 EOF
 cat > "$C/src/services/order_service.js" <<'EOF'
