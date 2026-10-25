@@ -155,6 +155,19 @@ assert_not_contains "$(grep $'^metrics\t' "$out/lk/tools/summary.txt")" "no-base
 assert_eq "" "$(grep 'sonarjs/cognitive-complexity' "$out/lk/tools/metrics.tsv")" "lockfile change: the untouched legacy function is not blamed on the edit below it"
 assert_contains "$(cat "$out/lk/tools/metrics-preexisting.tsv")" "sonarjs/cognitive-complexity" "lockfile change: the legacy function is pre-existing"
 
+# a test-only change still measures duplication: a 35-line helper copied between two test files
+to=$(tmpdir); git -C "$to" init -q -b main; mkdir -p "$to/src" "$to/test"
+echo '{ "name": "to", "type": "module" }' > "$to/package.json"; printf 'export const one = 1;\n' > "$to/src/one.js"
+git -C "$to" -c user.email=f@e -c user.name=f add -A; git -C "$to" -c user.email=f@e -c user.name=f commit -q -m base
+for t in a b; do
+  { echo 'export function makeFixture(n) {'; echo '  const order = { id: n, items: [] };'
+    for i in $(seq 1 32); do echo "  order.items.push({ sku: \"s$i\", qty: $i, price: $((i * 3)) });"; done
+    echo '  return order;'; echo '}'; echo "export const name$t = makeFixture(1);"; } > "$to/test/$t.test.js"
+done
+bash "$S/collect.sh" --repo "$to" --base main --head WORKTREE --out "$out/to" >/dev/null 2>&1
+assert_not_contains "$(grep $'^metrics\t' "$out/to/tools/summary.txt")" "no-changed-files" "test-only change: metrics still run"
+assert_contains "$(cat "$out/to/tools/metrics.tsv")" $'\tduplication\t' "test-only change: the 35-line clone between two test files is reported"
+
 # tsc that checked nothing is never `typecheck OK`: a global error (TS18003, no
 # file prefix) and a solution-style tsconfig (only references) are UNAVAILABLE
 for kind in global solution; do

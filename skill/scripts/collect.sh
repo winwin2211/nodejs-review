@@ -418,26 +418,29 @@ run_metrics() {
   local files=() f bin="$TOOLBELT/node_modules/.bin/eslint" cfg="$TOOLBELT/eslint.metrics.config.js" st
   [[ -x "$bin" ]] || { summary metrics "UNAVAILABLE(no-toolbelt)" "bash install.sh --toolbelt-only"; return; }
   while IFS= read -r f; do files+=("$f"); done < <(pkg_files "$OUT/changed-src-files.txt")
-  [[ ${#files[@]} -gt 0 ]] || { summary metrics "UNAVAILABLE(no-changed-files)" ""; return; }
-  local s0=$SECONDS
-  st=$(cd "$PKG_ABS" && run_with_timeout "$T_METRICS" "$TOOLS_DIR/metrics.txt" "$bin" --no-config-lookup -c "$cfg" -f json -o "$TOOLS_DIR/metrics.json" "${files[@]}")
-  case $st in TIMEOUT) summary metrics "UNAVAILABLE(timeout)" "${T_METRICS}s"; return ;; MISSING) summary metrics "UNAVAILABLE(missing)" ""; return ;; esac
-  [[ -f "$TOOLS_DIR/metrics.json" ]] || { summary metrics "UNAVAILABLE(metrics-error)" "$(head -1 "$TOOLS_DIR/metrics.txt" | cut -c1-120)"; return; }
-  # baseline: the same files as they exist at the merge-base
-  # the toolbelt reads only source, so a dependency change (BASELINE=lockfile-differs) keeps this baseline
-  local base_json="-" base_root="-" note="" budget
-  if [[ "$BASELINE" == no-worktree ]]; then note=", no-baseline($BASELINE)"
-  elif [[ -d "$BASE_WT/$PKG" ]]; then
-    local bfiles=()
-    for f in "${files[@]}"; do [[ -f "$BASE_WT/$PKG/$f" ]] && bfiles+=("$f"); done
-    if [[ ${#bfiles[@]} -eq 0 ]]; then
-      echo '[]' > "$TOOLS_DIR/metrics-base.json"; base_json="$TOOLS_DIR/metrics-base.json"; base_root="$BASE_WT"
-    else
-      budget=$((T_METRICS - (SECONDS - s0))); [[ $budget -lt 1 ]] && budget=1
-      local stb; stb=$(cd "$BASE_WT/$PKG" && run_with_timeout "$budget" "$TOOLS_DIR/metrics-base.txt" "$bin" --no-config-lookup -c "$cfg" -f json -o "$TOOLS_DIR/metrics-base.json" "${bfiles[@]}")
-      if [[ $stb == TIMEOUT || ! -f "$TOOLS_DIR/metrics-base.json" ]]; then note=", no-baseline(timeout)"; else base_json="$TOOLS_DIR/metrics-base.json"; base_root="$BASE_WT"; fi
-    fi
-  else note=", no-baseline(new-package)"; fi
+  # a test-only change gets no function metrics (none apply to tests) but still the duplication check
+  [[ ${#files[@]} -gt 0 || -n "$(pkg_files "$OUT/changed-test-files.txt")" ]] || { summary metrics "UNAVAILABLE(no-changed-files)" ""; return; }
+  local s0=$SECONDS base_json="-" base_root="-" note="" budget
+  if [[ ${#files[@]} -eq 0 ]]; then echo '[]' > "$TOOLS_DIR/metrics.json"
+  else
+    st=$(cd "$PKG_ABS" && run_with_timeout "$T_METRICS" "$TOOLS_DIR/metrics.txt" "$bin" --no-config-lookup -c "$cfg" -f json -o "$TOOLS_DIR/metrics.json" "${files[@]}")
+    case $st in TIMEOUT) summary metrics "UNAVAILABLE(timeout)" "${T_METRICS}s"; return ;; MISSING) summary metrics "UNAVAILABLE(missing)" ""; return ;; esac
+    [[ -f "$TOOLS_DIR/metrics.json" ]] || { summary metrics "UNAVAILABLE(metrics-error)" "$(head -1 "$TOOLS_DIR/metrics.txt" | cut -c1-120)"; return; }
+    # baseline: the same files as they exist at the merge-base
+    # the toolbelt reads only source, so a dependency change (BASELINE=lockfile-differs) keeps this baseline
+    if [[ "$BASELINE" == no-worktree ]]; then note=", no-baseline($BASELINE)"
+    elif [[ -d "$BASE_WT/$PKG" ]]; then
+      local bfiles=()
+      for f in "${files[@]}"; do [[ -f "$BASE_WT/$PKG/$f" ]] && bfiles+=("$f"); done
+      if [[ ${#bfiles[@]} -eq 0 ]]; then
+        echo '[]' > "$TOOLS_DIR/metrics-base.json"; base_json="$TOOLS_DIR/metrics-base.json"; base_root="$BASE_WT"
+      else
+        budget=$((T_METRICS - (SECONDS - s0))); [[ $budget -lt 1 ]] && budget=1
+        local stb; stb=$(cd "$BASE_WT/$PKG" && run_with_timeout "$budget" "$TOOLS_DIR/metrics-base.txt" "$bin" --no-config-lookup -c "$cfg" -f json -o "$TOOLS_DIR/metrics-base.json" "${bfiles[@]}")
+        if [[ $stb == TIMEOUT || ! -f "$TOOLS_DIR/metrics-base.json" ]]; then note=", no-baseline(timeout)"; else base_json="$TOOLS_DIR/metrics-base.json"; base_root="$BASE_WT"; fi
+      fi
+    else note=", no-baseline(new-package)"; fi
+  fi
   # duplication across the whole package, filtered to clones touching added lines
   local jscpd="$TOOLBELT/node_modules/.bin/jscpd" dup="-"
   if [[ -x "$jscpd" ]]; then

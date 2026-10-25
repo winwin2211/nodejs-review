@@ -137,4 +137,19 @@ s=$(bash "$S/metrics-report.sh" "$d/empty.json" "$repo" - - - "$d/added.tsv" "$d
 assert_eq "0 over (0 blocker, 0 major, 0 minor)" "$s" "empty report summary"
 assert_eq "" "$(cat "$d/o3/metrics.tsv")" "empty report -> empty tsv"
 
+# clones between two test files count only above 30 lines (shared fixtures are normal);
+# a clone between a test and a source file keeps the 10-line rule
+mkdir -p "$d/o6"; echo '[]' > "$d/empty.json"
+clone() { printf '{"format": "javascript", "lines": %s, "tokens": 200, "firstFile": {"name": "%s", "start": %s, "end": %s}, "secondFile": {"name": "%s", "start": %s, "end": %s}}' "$@"; }
+printf '{"duplicates": [%s, %s, %s]}\n' \
+  "$(clone 15 "$repo/test/a.test.js" 1 15 "$repo/test/b.test.js" 1 15)" \
+  "$(clone 35 "$repo/test/a.test.js" 20 54 "$repo/test/b.test.js" 20 54)" \
+  "$(clone 12 "$repo/src/x.js" 1 12 "$repo/test/c.test.js" 1 12)" > "$d/jscpd-tests.json"
+{ for i in $(seq 1 60); do printf 'test/b.test.js\t%s\n' "$i"; done; for i in $(seq 1 20); do printf 'test/c.test.js\t%s\n' "$i"; done; } > "$d/added-tests.tsv"
+bash "$S/metrics-report.sh" "$d/empty.json" "$repo" - - "$d/jscpd-tests.json" "$d/added-tests.tsv" "$d/o6" >/dev/null
+o6=$(cat "$d/o6/metrics.tsv")
+assert_not_contains "$o6" $'duplication\t15\t' "a 15-line clone between two test files is no finding"
+assert_contains "$o6" $'test/b.test.js\t20\tduplication\t35\t30\tMAJOR' "a 35-line clone between two test files is MAJOR at threshold 30"
+assert_contains "$o6" $'test/c.test.js\t1\tduplication\t12\t10\tMAJOR' "a clone between a test and a source file keeps threshold 10"
+
 finish

@@ -11,7 +11,8 @@
 #   sonarjs/cognitive-complexity >15 MAJOR, >30 BLOCKER | complexity >10 MAJOR
 #   max-lines-per-function >40 MINOR, >80 MAJOR | max-depth >3 MAJOR
 #   max-params >4 MINOR, >6 MAJOR | max-nested-callbacks >3 MAJOR
-#   no-magic-numbers MINOR (value = the literal) | duplication (jscpd) MAJOR, value = lines
+#   no-magic-numbers MINOR (value = the literal) | duplication (jscpd) MAJOR, value = lines;
+#   a clone between two test files counts only above 30 lines
 # The function column is the name in the message (or of a named row on the same
 # line), `(anonymous)` for a nameless function, `-` for a statement-level rule.
 # Origin: with a baseline, `new` unless the same metric was already over at the
@@ -93,6 +94,8 @@ awk -F'\t' -v OFS='\t' -v hasbase="$HAS_BASE" -v headroot="$HEAD_ROOT" -v basero
     t = srctext(root, file, line); if (t == "") t = "line:" line
     return file SUBSEP rule SUBSEP "src:" t
   }
+  # the test-path rule of collect.sh
+  function is_test(p) { return (p ~ /\.(test|spec|stories)\./ || p ~ /(^|\/)(__tests__|__mocks__|test|tests)\//) }
   function range_has_added(file, s, e,   l) { for (l = s; l <= e; l++) if ((file SUBSEP l) in added) return 1; return 0 }
   function next_start(file, line,   k, best, parts, n, i) {
     best = 0; n = split(fstarts[file], parts, " ")
@@ -121,10 +124,14 @@ awk -F'\t' -v OFS='\t' -v hasbase="$HAS_BASE" -v headroot="$HEAD_ROOT" -v basero
       if (origin == "preexisting") print row > outp; else { print row > outm; cnt[sev]++; total++ }
     }
     for (i = 1; i <= nd; i++) {
+      # between two test files only a clone above 30 lines counts (shared fixtures are normal)
+      both_tests = (is_test(d1[i]) && is_test(d2[i]))
+      if (both_tests && dl[i] + 0 <= 30) continue
+      thr = both_tests ? 30 : threshold("duplication")
       if (range_has_added(d1[i], d1s[i] + 0, d1e[i] + 0)) { f = d1[i]; s = d1s[i]; o = d2[i] ":" d2s[i] }
       else if (range_has_added(d2[i], d2s[i] + 0, d2e[i] + 0)) { f = d2[i]; s = d2s[i]; o = d1[i] ":" d1s[i] }
       else continue
-      print f, s, "duplication", dl[i], threshold("duplication"), "MAJOR", "<-> " o, "hunk" > outm; cnt["MAJOR"]++; total++
+      print f, s, "duplication", dl[i], thr, "MAJOR", "<-> " o, "hunk" > outm; cnt["MAJOR"]++; total++
     }
     printf "%d over (%d blocker, %d major, %d minor)\n", total + 0, cnt["BLOCKER"] + 0, cnt["MAJOR"] + 0, cnt["MINOR"] + 0
     close(outm); close(outp)
