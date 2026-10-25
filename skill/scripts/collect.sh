@@ -26,14 +26,16 @@ runner_timeout_ms() { local ms=$(( (T_TEST - 10) * 1000 )); [[ $ms -lt 1000 ]] &
 SCRUB=(env -i "PATH=$PATH" "HOME=$HOME" "TMPDIR=${TMPDIR:-/tmp}" "LANG=${LANG:-C.UTF-8}" "LC_ALL=${LC_ALL:-}" TERM=dumb CI=true NODE_ENV=test NO_COLOR=1)
 scrubbed_run() { "${SCRUB[@]}" "$@"; }
 
-# find_bin NAME PKGDIR -> the first node_modules/.bin/NAME walking from PKGDIR
-# up to REPO (workspaces hoist most binaries to the root), else nothing.
+# find_bin NAME PKGDIR [ROOT] -> the first node_modules/.bin/NAME walking from
+# PKGDIR up to ROOT (default REPO; workspaces hoist most binaries to the
+# root), else nothing.
 find_bin() {
-  local name=$1 abs
-  abs=$(cd "$REPO/$2" 2>/dev/null && pwd -P) || return 0
+  local name=$1 root=${3:-$REPO} abs
+  root=$(cd "$root" && pwd -P)
+  abs=$(cd "$root/$2" 2>/dev/null && pwd -P) || return 0
   while :; do
     if [[ -x "$abs/node_modules/.bin/$name" ]]; then echo "$abs/node_modules/.bin/$name"; return 0; fi
-    [[ "$abs" == "$REPO" || "$abs" == "/" ]] && return 0
+    [[ "$abs" == "$root" || "$abs" == "/" ]] && return 0
     abs=$(dirname "$abs")
   done
 }
@@ -173,9 +175,61 @@ bash "$HERE/detect-stack.sh" --repo "$REPO" --out "$OUT" --changed-files "$OUT/c
 # shellcheck disable=SC1091
 source "$OUT/stack.env"
 PKG_DIR=${PACKAGES%%:*}
+PKG_LIST=(${PACKAGES//:/ })
 PKG_NAME=$(jq -r '.name // ""' "$REPO/$PKG_DIR/package.json" 2>/dev/null || true)
 [[ -n "$PKG_NAME" ]] || PKG_NAME=$(basename "$(cd "$REPO/$PKG_DIR" && pwd -P)")
-NODE_MODULES=absent; [[ -e "$REPO/$PKG_DIR/node_modules" ]] && NODE_MODULES=present
+
+# deps_identical TREE_A TREE_B -> 0 when the lockfile (or, with no lockfile,
+# the package.json dependency sections) is identical in both trees
+deps_identical() {
+  if [[ -n "$LOCKFILE" ]]; then
+    cmp -s "$1/$LOCKFILE" "$2/$LOCKFILE"
+  else
+    cmp -s <(jq -S '{d: .dependencies, dd: .devDependencies}' "$1/$PKG_ROOT/package.json" 2>/dev/null) \
+           <(jq -S '{d: .dependencies, dd: .devDependencies}' "$2/$PKG_ROOT/package.json" 2>/dev/null)
+  fi
+}
+# link_node_modules SRC_TREE DST_TREE -> symlink the root and per-package
+# node_modules that exist in SRC into DST (a write under $OUT or $WORK/wt,
+# never under the reviewed checkout)
+link_node_modules() {
+  local p
+  for p in . "${PKG_LIST[@]}"; do
+    if [[ -d "$1/$p/node_modules" && ! -e "$2/$p/node_modules" ]]; then
+      ln -s "$(cd "$1/$p/node_modules" && pwd -P)" "$2/$p/node_modules"
+    fi
+  done
+  return 0
+}
+install_deps() { # frozen-lockfile, no lifecycle scripts, scrubbed env, inside the worktree only
+  local cmd=()
+  case "$PM" in
+    npm) cmd=(npm ci --ignore-scripts) ;;
+    pnpm) cmd=(pnpm install --frozen-lockfile --ignore-scripts) ;;
+    yarn-berry) cmd=(yarn install --immutable --mode=skip-build) ;;
+    yarn) cmd=(yarn install --frozen-lockfile --ignore-scripts) ;;
+    bun) cmd=(bun install --frozen-lockfile --ignore-scripts) ;;
+    *) log "cannot install: unknown package manager"; return 1 ;;
+  esac
+  local st; st=$(cd "$REPO/$PKG_ROOT" && run_with_timeout "$T_TEST" "$OUT/tools/install.txt" "${SCRUB[@]}" "${cmd[@]}")
+  [[ "$st" == OK ]]
+}
+
+# node_modules for the reviewed tree. MR mode (--repo is a worktree, --status-repo
+# the checkout): link the checkout's when dependencies are identical, install
+# with --install when they differ, else mark absent so every tool row says so.
+NM_REASON="" NM_HINT=""
+if [[ -e "$REPO/$PKG_DIR/node_modules" || -e "$REPO/node_modules" ]]; then
+  NODE_MODULES=present
+elif [[ "$REPO" != "$STATUS_REPO" ]] && deps_identical "$REPO" "$STATUS_REPO"; then
+  link_node_modules "$STATUS_REPO" "$REPO"; NODE_MODULES=linked-from-checkout
+elif [[ $INSTALL -eq 1 ]]; then
+  [[ "$REPO" != "$STATUS_REPO" ]] || die "refusing to install into the reviewed checkout; --install is for MR worktrees only"
+  if install_deps; then NODE_MODULES=installed; else NODE_MODULES=absent; NM_REASON=install-failed; NM_HINT="see tools/install.txt"; fi
+else
+  NODE_MODULES=absent
+  if [[ "$REPO" != "$STATUS_REPO" ]]; then NM_REASON=lockfile-differs; NM_HINT="rerun with --install"; else NM_REASON=no-node_modules; NM_HINT="run $PM install in the repo first"; fi
+fi
 
 # changed-packages.txt: workspace package names, or the changed source directories' basenames; never `.`
 : > "$OUT/changed-packages.txt"
@@ -206,8 +260,69 @@ if [[ $NO_TOOLS -eq 1 ]]; then
   for t in $TOOLS; do summary "$t" "UNAVAILABLE(skipped)" "--no-tools"; done
   exit 0
 fi
-PKG_LIST=(${PACKAGES//:/ })
 MULTI=0; [[ ${#PKG_LIST[@]} -gt 1 ]] && MULTI=1
+
+# Merge-base baseline: a second worktree so typecheck and metrics can report
+# only what the change introduced. It shares node_modules by symlink when the
+# dependencies are identical; otherwise there is no baseline and the rules
+# fall back to hunk filtering (the summary detail says so).
+BASE_WT="$OUT/base"; BASELINE=""
+cleanup_base() {
+  git -C "$REPO" worktree remove --force "$BASE_WT" >/dev/null 2>&1 || rm -rf "$BASE_WT"
+  git -C "$REPO" worktree prune >/dev/null 2>&1 || true
+}
+if git -C "$REPO" worktree add -q --detach "$BASE_WT" "$MB" 2>"$OUT/tools/base-worktree.txt"; then
+  trap cleanup_base EXIT
+  if [[ "$NODE_MODULES" != absent ]] && deps_identical "$REPO" "$BASE_WT"; then
+    link_node_modules "$REPO" "$BASE_WT"
+  else
+    BASELINE="lockfile-differs"
+  fi
+else
+  BASELINE="no-worktree"
+fi
+
+# tsc_flags TSC PKG_ABS TAG -> extra flags: redirect the .tsbuildinfo that an
+# incremental or composite project would otherwise write into the repo
+tsc_flags() {
+  if (cd "$2" && "$1" -p tsconfig.json --showConfig 2>/dev/null | jq -e '((.compilerOptions.incremental // false) or (.compilerOptions.composite // false))' >/dev/null 2>&1); then
+    printf '%s\n' --tsBuildInfoFile "$TOOLS_DIR/tsbuildinfo-$3"
+  fi
+}
+count_ts_errors() { grep -cE '^[^(]+\([0-9]+,[0-9]+\): error TS[0-9]+: ' "$1" 2>/dev/null || true; }
+run_typecheck() {
+  if [[ "$TS" != 1 || ! -f "$PKG_ABS/tsconfig.json" ]]; then summary typecheck "UNAVAILABLE(not-typescript)" ""; return; fi
+  if [[ "$NODE_MODULES" == absent ]]; then summary typecheck "UNAVAILABLE($NM_REASON)" "$NM_HINT"; return; fi
+  local tsc; tsc=$(find_bin tsc "$PKG")
+  [[ -n "$tsc" ]] || { summary typecheck "UNAVAILABLE(no-binary)" "tsc not in node_modules/.bin"; return; }
+  local extra=() l; while IFS= read -r l; do extra+=("$l"); done < <(tsc_flags "$tsc" "$PKG_ABS" head)
+  local s0=$SECONDS st
+  st=$(cd "$PKG_ABS" && run_with_timeout "$T_TYPECHECK" "$TOOLS_DIR/typecheck.txt" "$tsc" --noEmit -p tsconfig.json --pretty false ${extra[@]+"${extra[@]}"})
+  case $st in
+    TIMEOUT) summary typecheck "UNAVAILABLE(timeout)" "${T_TYPECHECK}s"; return ;;
+    MISSING) summary typecheck "UNAVAILABLE(missing)" "tsc not executable"; return ;;
+  esac
+  local base_file="-" note=""
+  if [[ -n "$BASELINE" ]]; then note=", no-baseline($BASELINE)"
+  elif [[ ! -f "$BASE_WT/$PKG/tsconfig.json" ]]; then note=", no-baseline(new-package)"
+  else
+    local btsc; btsc=$(find_bin tsc "$PKG" "$BASE_WT")
+    if [[ -z "$btsc" ]]; then note=", no-baseline(no-binary)"
+    else
+      local bextra=(); while IFS= read -r l; do bextra+=("$l"); done < <(tsc_flags "$btsc" "$BASE_WT/$PKG" base)
+      local budget=$((T_TYPECHECK - (SECONDS - s0))); [[ $budget -lt 1 ]] && budget=1
+      local stb; stb=$(cd "$BASE_WT/$PKG" && run_with_timeout "$budget" "$TOOLS_DIR/typecheck-base.txt" "$btsc" --noEmit -p tsconfig.json --pretty false ${bextra[@]+"${bextra[@]}"})
+      if [[ $stb == TIMEOUT ]]; then note=", no-baseline(timeout)"; else base_file="$TOOLS_DIR/typecheck-base.txt"; fi
+    fi
+  fi
+  bash "$HERE/typecheck-diff.sh" "$TOOLS_DIR/typecheck.txt" "$base_file" > "$TOOLS_DIR/typecheck-new.txt"
+  local n_head n_new; n_head=$(count_ts_errors "$TOOLS_DIR/typecheck.txt"); n_new=$(grep -c . "$TOOLS_DIR/typecheck-new.txt" || true)
+  [[ $MULTI -eq 1 ]] && sed "s#^#$PKG/#" "$TOOLS_DIR/typecheck-new.txt" >> "$OUT/tools/typecheck-new.txt"
+  local status=OK; [[ $n_new -gt 0 ]] && status=FAIL
+  summary typecheck "$status" "$n_new new, $((n_head - n_new)) pre-existing$note"
+}
+
+[[ $MULTI -eq 1 ]] && : > "$OUT/tools/typecheck-new.txt"
 for PKG in "${PKG_LIST[@]}"; do
   PKG_ABS=$(cd "$REPO/$PKG" && pwd -P)
   if [[ $MULTI -eq 1 ]]; then
@@ -218,5 +333,6 @@ for PKG in "${PKG_LIST[@]}"; do
     TOOLS_DIR="$OUT/tools"; DETAIL_PREFIX=""
   fi
   mkdir -p "$TOOLS_DIR"
-  for t in $TOOLS; do summary "$t" "UNAVAILABLE(not-implemented)" ""; done
+  run_typecheck
+  for t in lint metrics test coverage audit; do summary "$t" "UNAVAILABLE(not-implemented)" ""; done
 done
