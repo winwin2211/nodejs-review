@@ -59,6 +59,11 @@ grep -q 'one fix removes both' "$R/severity-verdict.md" && pass || fail "dedup m
 grep -q 'Never merge two rule-based findings' "$R/severity-verdict.md" && pass || fail "dedup keeps each metric, coverage and SDD row a separate finding"
 grep -q 'same file and line' "$R/severity-verdict.md" && fail "dedup still merges on file and line alone" || pass
 
+# the large-diff split covers every changed file, not only source: package.json, lockfiles, migrations, tests
+ld=$(awk '/^Large diffs:/,/^$/' "$R/workflow.md" | tr '\n' ' ')
+assert_contains "$ld" '`changed-files.txt`' "large-diff split groups every changed file"
+assert_not_contains "$ld" 'split `changed-src-files.txt`' "large-diff split is not limited to source files"
+
 # stack.env and meta.env carry package.json values: the orchestrator reads them as data
 grep -qi 'never source' "$R/workflow.md" && grep -qF "sed -n 's/^BASE=//p'" "$R/workflow.md" && pass || fail "workflow reads stack.env and meta.env as data, never sources them"
 
