@@ -118,8 +118,13 @@ wrote at its start. `ASSERT_CLEAN_PRUNE=node_modules` prunes `node_modules`
 from that scan (tool caches such as `node_modules/.vite` live there and are
 not source); `git status --ignored` still covers everything else. Outside
 the guarantee: `.git` internal writes made by `git fetch` or worktree
-add/remove, and a write that restores the file's previous mtime. A file the
-user edits while the review runs is also listed; the banner says so. Every
+add/remove, and a write that restores the file's previous mtime. Anything
+else that writes inside the repo while the review runs is listed too: the
+user's editor, a service logging into the repo, an IDE. When `git status` is
+otherwise unchanged the script cannot tell those writes from a test's, so it
+exits 3 instead of 2 and its banner says who may have written them;
+workflow.md (step 6) reports them as writes to check, never as files to
+remove. Every
 worktree the skill creates is added with `-c core.hooksPath=/dev/null`, so no
 git hook (husky's included) runs during the review.
 

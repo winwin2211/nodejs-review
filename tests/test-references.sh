@@ -81,4 +81,11 @@ grep -q 'nodejs-review' "$R/gitlab.md" && pass || fail "gitlab.md names nodejs-r
 grep -q 'go-review' "$R/gitlab.md" && fail "gitlab.md still says go-review" || pass
 grep 'worktree add' "$R/gitlab.md" | grep -q 'core.hooksPath=/dev/null' && pass || fail "gitlab.md creates the MR worktree with repository hooks disabled"
 
+# assert-clean exit 3 (writes git status cannot attribute: the user's editor,
+# a service's log) is reported as such, never as files to remove
+exit3=$(awk '/assert-clean.sh` exits 3/,/^$/' "$R/workflow.md")
+assert_contains "$exit3" "WRITTEN DURING THE RUN" "workflow.md gives assert-clean exit 3 its own heading"
+assert_contains "$exit3" "never tell the user to remove them" "workflow.md never has the user remove unattributed writes"
+grep -qF 'exits 3 instead of 2' "$R/tooling.md" && pass || fail "tooling.md explains when assert-clean exits 3"
+
 finish
