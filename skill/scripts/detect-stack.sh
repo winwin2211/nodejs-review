@@ -3,8 +3,10 @@
 #
 #   detect-stack.sh --repo R --out O [--changed-files F] [--package DIR]
 #
-# Keys written: PM LOCKFILE TS RUNNER LINTER WORKSPACES PACKAGES
-# PACKAGES_OVERFLOW NODE ENGINES ENGINES_MATCH PKG_ROOT. Nothing is executed
+# Keys written: PM LOCKFILE TS RUNNER LINTER RUNNERS LINTERS WORKSPACES
+# PACKAGES PACKAGES_OVERFLOW NODE ENGINES ENGINES_MATCH PKG_ROOT. RUNNERS and
+# LINTERS are `:`-lists aligned with PACKAGES; RUNNER and LINTER are the
+# first package's. Nothing is executed
 # from the repository; only files are read.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -120,36 +122,51 @@ IFS=: read -ra pkg_list <<<"$PACKAGES"
 for p in "${pkg_list[@]}" "$PKG_ROOT"; do [[ -f "$REPO/$p/tsconfig.json" ]] && TS=1; done
 [[ "$(pj '(.dependencies.typescript // .devDependencies.typescript) // ""')" != "" ]] && TS=1
 
-# --- test runner: config files, then the test script, then dependencies ---
-RUNNER=none
-has_cfg() { # basename-without-ext ext...
-  local b=$1; shift; local e
-  for e in "$@"; do in_pkg_root "$b.$e" && return 0; done
+# --- test runner and linter, per package: its own config files, test script
+# and dependencies, else the package root's (a workspace root often only fans
+# out, `pnpm -r test`, while each package carries its own vitest config) ---
+in_dir() { [[ -e "$REPO/$1/$2" ]]; }
+has_cfg() { # dir basename-without-ext ext...
+  local dir=$1 b=$2 e; shift 2
+  for e in "$@"; do in_dir "$dir" "$b.$e" && return 0; done
   return 1
 }
-if has_cfg vitest.config js ts mjs mts cjs cts || has_cfg vitest.workspace js ts mjs mts; then RUNNER=vitest
-elif { for e in js ts mjs mts cjs cts; do in_pkg_root "vite.config.$e" && grep -qE '^[[:space:]]*test[[:space:]]*:' "$REPO/$PKG_ROOT/vite.config.$e" && echo hit; done; } | grep -q hit; then RUNNER=vitest
-elif has_cfg jest.config js ts mjs cjs json || [[ "$(pj '.jest // ""')" != "" ]]; then RUNNER=jest
-else
-  script=$(pj '.scripts.test // ""')
+pjd() { # dir filter -> pj on that dir's package.json
+  jq -r "($2) | if type == \"string\" then gsub(\"[\\r\\n]\"; \" \") else . end" "$REPO/$1/package.json" 2>/dev/null || true
+}
+runner_in() { # dir -> vitest|jest|node-test|mocha|bun-test|ava|none
+  local dir=$1 e script deps r
+  if has_cfg "$dir" vitest.config js ts mjs mts cjs cts || has_cfg "$dir" vitest.workspace js ts mjs mts; then echo vitest; return; fi
+  for e in js ts mjs mts cjs cts; do
+    if in_dir "$dir" "vite.config.$e" && grep -qE '^[[:space:]]*test[[:space:]]*:' "$REPO/$dir/vite.config.$e"; then echo vitest; return; fi
+  done
+  if has_cfg "$dir" jest.config js ts mjs cjs json || [[ "$(pjd "$dir" '.jest // ""')" != "" ]]; then echo jest; return; fi
+  script=$(pjd "$dir" '.scripts.test // ""')
   case "$script" in
-    *"node --test"*|*"node --experimental-test"*) RUNNER=node-test ;;
-    *vitest*) RUNNER=vitest ;;
-    *jest*) RUNNER=jest ;;
-    *mocha*) RUNNER=mocha ;;
-    *"bun test"*) RUNNER=bun-test ;;
-    *ava*) RUNNER=ava ;;
-    *)
-      deps=$(pj '((.dependencies // {}) + (.devDependencies // {})) | keys[]')
-      for r in vitest jest mocha ava; do grep -qx "$r" <<<"$deps" && { RUNNER=$r; break; }; done
-      ;;
+    *"node --test"*|*"node --experimental-test"*) echo node-test; return ;;
+    *vitest*) echo vitest; return ;;
+    *jest*) echo jest; return ;;
+    *mocha*) echo mocha; return ;;
+    *"bun test"*) echo bun-test; return ;;
+    *ava*) echo ava; return ;;
   esac
-fi
-
-# --- linter ---
-LINTER=none
-if has_cfg eslint.config js mjs cjs ts mts cts || in_pkg_root .eslintrc || has_cfg .eslintrc js cjs json yml yaml || [[ "$(pj '.eslintConfig // ""')" != "" ]]; then LINTER=eslint
-elif in_pkg_root biome.json || in_pkg_root biome.jsonc; then LINTER=biome; fi
+  deps=$(pjd "$dir" '((.dependencies // {}) + (.devDependencies // {})) | keys[]')
+  for r in vitest jest mocha ava; do if grep -qx "$r" <<<"$deps"; then echo "$r"; return; fi; done
+  echo none
+}
+linter_in() { # dir -> eslint|biome|none
+  local dir=$1
+  if has_cfg "$dir" eslint.config js mjs cjs ts mts cts || in_dir "$dir" .eslintrc || has_cfg "$dir" .eslintrc js cjs json yml yaml || [[ "$(pjd "$dir" '.eslintConfig // ""')" != "" ]]; then echo eslint
+  elif in_dir "$dir" biome.json || in_dir "$dir" biome.jsonc; then echo biome
+  else echo none; fi
+}
+RUNNERS="" LINTERS=""
+for p in "${pkg_list[@]}"; do
+  r=$(runner_in "$p"); if [[ $r == none && "$p" != "$PKG_ROOT" ]]; then r=$(runner_in "$PKG_ROOT"); fi
+  l=$(linter_in "$p"); if [[ $l == none && "$p" != "$PKG_ROOT" ]]; then l=$(linter_in "$PKG_ROOT"); fi
+  RUNNERS+="${RUNNERS:+:}$r"; LINTERS+="${LINTERS:+:}$l"
+done
+RUNNER=${RUNNERS%%:*}; LINTER=${LINTERS%%:*}
 
 # --- node version vs engines ---
 NODE=$(node --version 2>/dev/null || echo unknown)
@@ -186,6 +203,8 @@ kv() { local v=${2//$'\n'/ }; printf '%s=%s\n' "$1" "${v//$'\r'/ }"; }
   kv TS "$TS"
   kv RUNNER "$RUNNER"
   kv LINTER "$LINTER"
+  kv RUNNERS "$RUNNERS"
+  kv LINTERS "$LINTERS"
   kv WORKSPACES "$WORKSPACES"
   kv PACKAGES "$PACKAGES"
   kv PACKAGES_OVERFLOW "$PACKAGES_OVERFLOW"

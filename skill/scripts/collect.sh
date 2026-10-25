@@ -183,10 +183,11 @@ awk '
 bash "$HERE/detect-stack.sh" --repo "$REPO" --out "$OUT" --changed-files "$OUT/changed-files.txt" ${PKG_OPT:+--package "$PKG_OPT"}
 # stack.env carries values from the repo's package.json (engines ">=22", "$(...)"): read it as data, never
 # source it, and only the keys detect-stack.sh writes (an OUT= or PATH= line must not set this script's variables)
-STACK_KEYS='^(PKG_ROOT|PM|LOCKFILE|TS|RUNNER|LINTER|WORKSPACES|PACKAGES|PACKAGES_OVERFLOW|NODE|ENGINES|ENGINES_MATCH)$'
+STACK_KEYS='^(PKG_ROOT|PM|LOCKFILE|TS|RUNNER|LINTER|RUNNERS|LINTERS|WORKSPACES|PACKAGES|PACKAGES_OVERFLOW|NODE|ENGINES|ENGINES_MATCH)$'
 while IFS='=' read -r k v; do [[ "$k" =~ $STACK_KEYS ]] && printf -v "$k" '%s' "$v"; done < "$OUT/stack.env"
 PKG_DIR=${PACKAGES%%:*}
 IFS=: read -ra PKG_LIST <<<"$PACKAGES"
+IFS=: read -ra RUNNER_LIST <<<"$RUNNERS"; IFS=: read -ra LINTER_LIST <<<"$LINTERS"
 PKG_NAME=$(jq -r '.name // ""' "$REPO/$PKG_DIR/package.json" 2>/dev/null || true)
 [[ -n "$PKG_NAME" ]] || PKG_NAME=$(basename "$(cd "$REPO/$PKG_DIR" && pwd -P)")
 
@@ -523,7 +524,8 @@ if [[ $MULTI -eq 1 ]]; then
   : > "$OUT/tools/typecheck-new.txt"; : > "$OUT/tools/metrics.tsv"; : > "$OUT/tools/metrics-preexisting.tsv"; echo '[]' > "$OUT/tools/lint-changed.json"
   : > "$OUT/tools/test-classified.txt"; : > "$OUT/tools/coverage-changed.txt"; : > "$OUT/tools/audit-new.tsv"
 fi
-for PKG in "${PKG_LIST[@]}"; do
+for i in "${!PKG_LIST[@]}"; do
+  PKG=${PKG_LIST[$i]}; RUNNER=${RUNNER_LIST[$i]:-none}; LINTER=${LINTER_LIST[$i]:-none}
   PKG_ABS=$(cd "$REPO/$PKG" && pwd -P)
   if [[ $MULTI -eq 1 ]]; then
     TOOLS_DIR="$OUT/tools/$(pkg_slug "$PKG")"

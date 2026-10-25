@@ -28,6 +28,8 @@ assert_eq "." "$(val "$f" PACKAGES)" "a: root package"
 assert_eq "$(node --version)" "$(val "$f" NODE)" "a: node version recorded"
 assert_eq "" "$(val "$f" ENGINES)" "a: no engines"
 assert_eq "unknown" "$(val "$f" ENGINES_MATCH)" "a: engines match unknown when none declared"
+assert_eq "vitest" "$(val "$f" RUNNERS)" "a: RUNNERS for a single package"
+assert_eq "eslint" "$(val "$f" LINTERS)" "a: LINTERS for a single package"
 
 # (b) pnpm workspace; the changed file picks the owning package
 b=$(mkrepo)
@@ -62,6 +64,29 @@ printf 'packages/my api/x.js\n' > "$out/b4-changed.txt"
 bash "$S/detect-stack.sh" --repo "$b4" --out "$out/b4" --changed-files "$out/b4-changed.txt"; rc=$?
 assert_eq "0" "$rc" "b4: a workspace path with a space does not end the script"
 assert_eq "packages/my api" "$(val "$out/b4/stack.env" PACKAGES)" "b4: a workspace path with a space is one package"
+
+# (b5) runner and linter per package: a workspace root that only fans out (`pnpm -r test`)
+b5=$(mkrepo); echo '{"name":"m","private":true,"scripts":{"test":"pnpm -r test"}}' > "$b5/package.json"; : > "$b5/pnpm-lock.yaml"
+printf 'packages:\n  - "packages/*"\n' > "$b5/pnpm-workspace.yaml"
+mkdir -p "$b5/packages/api" "$b5/packages/web"
+echo '{"name":"api","scripts":{"test":"vitest run"},"devDependencies":{"vitest":"^5.0.0","eslint":"^9.0.0"}}' > "$b5/packages/api/package.json"
+: > "$b5/packages/api/vitest.config.ts"; : > "$b5/packages/api/eslint.config.js"
+echo '{"name":"web","jest":{"testEnvironment":"node"}}' > "$b5/packages/web/package.json"
+printf 'packages/api/src/x.ts\npackages/web/src/y.ts\n' > "$out/b5-changed.txt"
+bash "$S/detect-stack.sh" --repo "$b5" --out "$out/b5" --changed-files "$out/b5-changed.txt"
+f="$out/b5/stack.env"
+assert_eq "packages/api:packages/web" "$(val "$f" PACKAGES)" "b5: both packages"
+assert_eq "vitest:jest" "$(val "$f" RUNNERS)" "b5: each package's own runner, aligned with PACKAGES"
+assert_eq "eslint:none" "$(val "$f" LINTERS)" "b5: each package's own linter, aligned with PACKAGES"
+assert_eq "vitest" "$(val "$f" RUNNER)" "b5: RUNNER is the first package's"
+assert_eq "eslint" "$(val "$f" LINTER)" "b5: LINTER is the first package's"
+# a package with nothing of its own inherits the workspace root's runner and linter
+b6=$(mkrepo); echo '{"name":"m6","workspaces":["packages/*"],"devDependencies":{"vitest":"^5.0.0"}}' > "$b6/package.json"
+: > "$b6/vitest.config.ts"; : > "$b6/eslint.config.js"; mkdir -p "$b6/packages/lib"; echo '{"name":"lib"}' > "$b6/packages/lib/package.json"
+printf 'packages/lib/x.js\n' > "$out/b6-changed.txt"
+bash "$S/detect-stack.sh" --repo "$b6" --out "$out/b6" --changed-files "$out/b6-changed.txt"
+assert_eq "vitest" "$(val "$out/b6/stack.env" RUNNERS)" "b6: root runner inherited"
+assert_eq "eslint" "$(val "$out/b6/stack.env" LINTERS)" "b6: root linter inherited"
 
 # (c) packageManager field wins over the lockfile name; yarn berry from .yarnrc.yml
 c=$(mkrepo)
@@ -110,7 +135,7 @@ assert_eq "1" "$(val "$out/g2/stack.env" ENGINES_MATCH)" "g2: engines match"
 # (g3) a newline in a package.json value cannot add a key to stack.env
 g3=$(mkrepo); printf '{"name":"g3","engines":{"node":">=18\\nOUT=/elsewhere\\rRUNNER=jest"}}\n' > "$g3/package.json"
 bash "$S/detect-stack.sh" --repo "$g3" --out "$out/g3"
-assert_eq "12" "$(wc -l < "$out/g3/stack.env" | tr -d ' ')" "g3: one line per key"
+assert_eq "14" "$(wc -l < "$out/g3/stack.env" | tr -d ' ')" "g3: one line per key"
 assert_eq "" "$(val "$out/g3/stack.env" OUT)" "g3: no OUT= line injected"
 assert_eq "none" "$(val "$out/g3/stack.env" RUNNER)" "g3: no RUNNER= line injected"
 assert_eq ">=18 OUT=/elsewhere RUNNER=jest" "$(val "$out/g3/stack.env" ENGINES)" "g3: line breaks in a value become spaces"

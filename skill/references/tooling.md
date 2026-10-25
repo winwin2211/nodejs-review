@@ -43,7 +43,7 @@ Final no-artifact check (always run, even after errors):
 | File | Meaning |
 |---|---|
 | `meta.env` | `REPO, BASE, HEAD, HEAD_SHA, MERGE_BASE, MODE, PKG_DIR, PKG_NAME, NODE_MODULES` (`present`, `linked-from-checkout`, `installed`, `absent`) |
-| `stack.env` | `PKG_ROOT, PM, LOCKFILE, TS, RUNNER, LINTER, WORKSPACES, PACKAGES, PACKAGES_OVERFLOW, NODE, ENGINES, ENGINES_MATCH` |
+| `stack.env` | `PKG_ROOT, PM, LOCKFILE, TS, RUNNER, LINTER, RUNNERS, LINTERS, WORKSPACES, PACKAGES, PACKAGES_OVERFLOW, NODE, ENGINES, ENGINES_MATCH`; `RUNNERS` and `LINTERS` are `:`-lists aligned with `PACKAGES` (each package's own, else the package root's); `RUNNER` and `LINTER` are the first package's |
 | `diff.patch`, `changed-files.txt` | unified diff; the review scope |
 | `changed-src-files.txt`, `changed-test-files.txt` | existing source / test files in the diff (`*.test.*`, `*.spec.*`, `__tests__/`, `test/`, `tests/`, `__mocks__/`, `*.stories.*` are tests) |
 | `changed-packages.txt` | workspace package names, or the changed source directories' basenames |

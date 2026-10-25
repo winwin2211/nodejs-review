@@ -325,6 +325,20 @@ assert_eq "7" "$(cat "$out/gc/nontest-lines.txt")" "git config: added and remove
 assert_eq $'src/a.js\nsrc/café.js\nsrc/my file.js\nsrc/new one.js\nsrc/old.js' "$(cat "$out/gc/changed-files.txt")" "git config: changed files unquoted, deleted file listed"
 assert_not_contains "$(cat "$out/gc/diff.patch")" "EXTERNAL DIFF TOOL" "git config: diff.external is not used"
 
+# a workspace package's own runner runs, though the workspace root names none
+mr=$(tmpdir); git -C "$mr" init -q -b main
+echo '{ "name": "mr", "private": true, "workspaces": ["packages/*"], "scripts": { "test": "npm test -ws" } }' > "$mr/package.json"
+: > "$mr/package-lock.json"; printf 'node_modules\n' > "$mr/.gitignore"
+mkdir -p "$mr/packages/api/src" "$mr/packages/api/node_modules/.bin"
+echo '{ "name": "api", "type": "module", "devDependencies": { "vitest": "^5.0.0" } }' > "$mr/packages/api/package.json"
+: > "$mr/packages/api/vitest.config.ts"; cp "$fv/node_modules/.bin/vitest" "$mr/packages/api/node_modules/.bin/vitest"
+printf 'export const a = 1;\n' > "$mr/packages/api/src/a.js"
+git -C "$mr" -c user.email=f@e -c user.name=f add -A; git -C "$mr" -c user.email=f@e -c user.name=f commit -q -m base
+printf 'export const a = 2;\n' > "$mr/packages/api/src/a.js"
+bash "$S/collect.sh" --repo "$mr" --base main --head WORKTREE --out "$out/mr" >/dev/null 2>&1
+assert_contains "$(cat "$out/mr/tools/summary.txt")" $'test\tFAIL\t' "monorepo: the package's vitest ran (the recording has one failure)"
+assert_not_contains "$(cat "$out/mr/tools/summary.txt")" "no-runner" "monorepo: not UNAVAILABLE(no-runner)"
+
 # a workspace package whose path holds a space is one package
 ws=$(tmpdir); git -C "$ws" init -q -b main
 echo '{ "name": "ws", "workspaces": ["packages/my api"] }' > "$ws/package.json"
