@@ -5,6 +5,12 @@ SYNC="$REPO_ROOT/scripts/sync-shared.sh"
 
 for f in $SHARED; do assert_file "$REPO_ROOT/$f" "shared copy exists: $f"; done
 
+# the shared lib.sh names this skill from our SKILL.md, whatever REVIEW_TOOL the environment carries
+r=$(REVIEW_TOOL=go-review bash -c "source '$REPO_ROOT/skill/scripts/lib.sh'; die boom" 2>&1)
+assert_eq "nodejs-review: boom" "$r" "an inherited REVIEW_TOOL (go-review's) does not change our prefix"
+r=$(env -u REVIEW_TOOL bash -c "source '$REPO_ROOT/skill/scripts/lib.sh'; die boom" 2>&1)
+assert_eq "nodejs-review: boom" "$r" "without REVIEW_TOOL exported the prefix is still ours"
+
 # this test never writes the real checkout: every sync below targets a copy (--root)
 keep=$(tmpdir); cp "$REPO_ROOT/skill/scripts/lib.sh" "$keep/lib.sh"
 

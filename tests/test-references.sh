@@ -74,12 +74,41 @@ grep -q 'NODEJS_REVIEW_TIMEOUT_' "$R/tooling.md" && pass || fail "tooling docume
 for t in typecheck lint metrics test coverage audit; do
   grep -q "\`$t\`" "$R/tooling.md" || grep -q "^| $t" "$R/tooling.md" || grep -q "$t " "$R/tooling.md" && pass || fail "tooling mentions the $t row"
 done
-grep -q 'REVIEW_TOOL=nodejs-review' "$R/tooling.md" && pass || fail "tooling sets REVIEW_TOOL"
+grep -qF 'whole seconds' "$R/tooling.md" && pass || fail "tooling says budgets are whole seconds"
+# the shared scripts take our name from SKILL.md; nothing has the orchestrator export it
+grep -q 'REVIEW_TOOL' "$R/tooling.md" "$R/workflow.md" && fail "tooling.md or workflow.md still exports REVIEW_TOOL" || pass
+grep -q 'exports as' "$R/gitlab.md" && fail "gitlab.md still says the marker name is exported" || pass
 
 # gitlab.md is go-review's with our name
 grep -q 'nodejs-review' "$R/gitlab.md" && pass || fail "gitlab.md names nodejs-review"
 grep -q 'go-review' "$R/gitlab.md" && fail "gitlab.md still says go-review" || pass
 grep 'worktree add' "$R/gitlab.md" | grep -q 'core.hooksPath=/dev/null' && pass || fail "gitlab.md creates the MR worktree with repository hooks disabled"
+
+# branch mode reviews the branch, not whatever the checkout holds
+branch=$(awk '/^   - Branch name:/,/^   - MR/' "$R/workflow.md")
+assert_contains "$branch" "worktree add" "workflow.md checks a branch that is not checked out into a worktree"
+assert_contains "$branch" "core.hooksPath=/dev/null" "the branch worktree is made with repository hooks disabled"
+assert_contains "$branch" "status --porcelain" "a dirty checkout of the branch is also reviewed from a worktree"
+assert_contains "$branch" 'REVIEW_REPO=$WORK/wt' "branch mode then reviews the worktree"
+step1=$(awk '/^## 1\. /,/^## 2\. /' "$R/workflow.md")
+assert_not_contains "$step1" "In MR mode also pass" "step 1 passes --status-repo for any temporary worktree, not only MR mode"
+grep -qF 'not checked out' "$R/tooling.md" && pass || fail "tooling.md says collect.sh refuses a --head that is not checked out"
+inst=$(awk '/^5\. `--install`/,/^6\. /' "$R/workflow.md")
+assert_contains "$inst" "temporary worktree" "--install is tied to the temporary worktree"
+assert_not_contains "$inst" "only meaningful in MR mode" "--install also serves a branch reviewed from a worktree"
+grep -q 'MR mode only' "$SK/SKILL.md" && fail "SKILL.md still limits --install to MR mode" || pass
+
+# the verifier re-reads the reviewed tree (the worktree when there is one)
+step4=$(awk '/^## 4\. /,/^## 5\. /' "$R/workflow.md")
+assert_contains "$step4" 'Repo: <REVIEW_REPO>' "the verifier prompt names the reviewed tree"
+assert_contains "$step4" 'Work dir: <WORK>' "the verifier prompt names the work dir"
+
+# assert-clean: an unreadable directory, and files dated in the future
+exit1=$(awk '/assert-clean.sh` exits 1/,/^$/' "$R/workflow.md")
+assert_contains "$exit1" "could not read" "workflow.md names an unreadable directory as an assert-clean exit 1"
+grep -qF 'Not scanned' "$R/workflow.md" && pass || fail "workflow.md says the Not scanned lines are not files to remove"
+grep -qF 'cannot read' "$R/tooling.md" && pass || fail "tooling.md explains what an unreadable directory does to the scan"
+grep -qF 'later than the check' "$R/tooling.md" && pass || fail "tooling.md says future mtimes are not counted"
 
 # assert-clean exit 3 (writes git status cannot attribute: the user's editor,
 # a service's log) is reported as such, never as files to remove

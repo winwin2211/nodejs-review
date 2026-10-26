@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
 cd "$(dirname "$0")"
-export REVIEW_TOOL=nodejs-review
 REPO_ROOT=$(cd .. && pwd)
 # The suite runs offline, but only after the toolbelt was installed once.
 if [[ -f "$REPO_ROOT/skill/toolbelt/package.json" && ! -d "$REPO_ROOT/skill/toolbelt/node_modules" ]]; then

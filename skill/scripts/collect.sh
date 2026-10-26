@@ -18,6 +18,11 @@ T_LINT=${NODEJS_REVIEW_TIMEOUT_LINT:-180}
 T_METRICS=${NODEJS_REVIEW_TIMEOUT_METRICS:-120}
 T_TEST=${NODEJS_REVIEW_TIMEOUT_TEST:-600}
 T_AUDIT=${NODEJS_REVIEW_TIMEOUT_AUDIT:-120}
+# Whole seconds only: perl's alarm reads "3m" as 3 and 0 as no timeout at all.
+for v in TYPECHECK LINT METRICS TEST AUDIT; do
+  n="NODEJS_REVIEW_TIMEOUT_$v"
+  [[ -z "${!n:-}" || "${!n}" =~ ^[1-9][0-9]*$ ]] || die "$n must be whole seconds (at least 1), got '${!n}'"
+done
 runner_timeout_ms() { local ms=$(( (T_TEST - 10) * 1000 )); [[ $ms -lt 1000 ]] && ms=1000; echo "$ms"; }
 
 # Scrubbed environment for anything that executes repository code: an
@@ -104,8 +109,8 @@ OUT=$(cd "$OUT" && pwd -P)
 # Baseline snapshots for assert-clean.sh, taken first so a later failure (bad
 # --base, tool crash) never leaves the run without them. mtime-marker goes
 # before everything: files under the repo newer than it were written during
-# the run. Taken against --status-repo (defaults to --repo; differs in MR mode
-# where --repo is a throwaway worktree).
+# the run. Taken against --status-repo (defaults to --repo; differs whenever
+# --repo is a throwaway worktree).
 touch "$OUT/mtime-marker"
 git -C "$STATUS_REPO" status --porcelain > "$OUT/status-before.txt"
 git -C "$STATUS_REPO" status --porcelain --ignored > "$OUT/status-ignored-before.txt"
@@ -114,8 +119,13 @@ git -C "$STATUS_REPO" stash list > "$OUT/stash-before.txt"
 if [[ "$HEAD" == "WORKTREE" ]]; then MODE=worktree; HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
 else
   MODE=ref; HEAD_SHA=$(git -C "$REPO" rev-parse "$HEAD")
+  # The stack, node_modules and every tool read the working tree, so a head
+  # that is not checked out would be reviewed as whatever the checkout holds.
+  # The baselines above are already taken, so assert-clean.sh can still
+  # verify after this refusal.
   actual_head=$(git -C "$REPO" rev-parse HEAD)
-  [[ "$actual_head" == "$HEAD_SHA" ]] || log "checked-out HEAD $actual_head differs from --head $HEAD_SHA; tools run against the checkout"
+  [[ "$actual_head" == "$HEAD_SHA" ]] ||
+    die "--head $HEAD ($HEAD_SHA) is not checked out in $REPO (HEAD is $actual_head); check it out in a temporary worktree and pass that as --repo"
 fi
 MB=$(merge_base "$REPO" "$BASE" "$HEAD_SHA")
 
@@ -253,8 +263,8 @@ install_deps() { # frozen-lockfile, no lifecycle scripts, scrubbed env, inside t
   [[ "$st" == OK ]]
 }
 
-# node_modules for the reviewed tree. MR mode (--repo is a worktree, --status-repo
-# the checkout): link the checkout's when dependencies are identical, install
+# node_modules for the reviewed tree. With a temporary worktree (--repo is the
+# worktree, --status-repo the checkout): link the checkout's when dependencies are identical, install
 # with --install when they differ, else mark absent so every tool row says so.
 NM_REASON="" NM_HINT=""
 if [[ -e "$REPO/$PKG_DIR/node_modules" || -e "$REPO/node_modules" ]]; then
@@ -262,7 +272,7 @@ if [[ -e "$REPO/$PKG_DIR/node_modules" || -e "$REPO/node_modules" ]]; then
 elif [[ "$REPO" != "$STATUS_REPO" ]] && deps_identical "$REPO" "$STATUS_REPO"; then
   link_node_modules "$STATUS_REPO" "$REPO"; NODE_MODULES=linked-from-checkout
 elif [[ $INSTALL -eq 1 ]]; then
-  [[ "$REPO" != "$STATUS_REPO" ]] || die "refusing to install into the reviewed checkout; --install is for MR worktrees only"
+  [[ "$REPO" != "$STATUS_REPO" ]] || die "refusing to install into the reviewed checkout; --install is for temporary worktrees only"
   if install_deps; then NODE_MODULES=installed; else NODE_MODULES=absent; NM_REASON=install-failed; NM_HINT="see tools/install.txt"; fi
 else
   NODE_MODULES=absent

@@ -482,4 +482,21 @@ git -C "$nn" -c user.email=f@e -c user.name=f add -A; git -C "$nn" -c user.email
 r=$(bash "$S/collect.sh" --repo "$nn" --base main --head WORKTREE --out "$out/nn" --no-tools 2>&1 || true)
 assert_contains "$r" "not a Node.js repo" "no package.json is a clear error"
 
+# --- budgets are whole seconds: perl's alarm reads "20m" as 20 and 0 as no timeout ---
+for bad in 20m 0 1.5; do
+  r=$(NODEJS_REVIEW_TIMEOUT_TEST=$bad bash "$S/collect.sh" --repo "$fx/dirty" --base main --head WORKTREE --out "$out/bud" --no-tools 2>&1); rc=$?
+  assert_eq "1" "$rc" "a test budget of '$bad' exits 1"
+  assert_contains "$r" "NODEJS_REVIEW_TIMEOUT_TEST must be whole seconds" "the bad budget '$bad' is named"
+done
+[[ -e "$out/bud/status-before.txt" ]] && fail "a bad budget is refused before anything is collected" || pass
+
+# --- ref mode with --head not checked out: the working tree holds other code,
+# so collect.sh refuses rather than read and test the checkout as the head ---
+git -C "$rd" checkout -q main
+r=$(bash "$S/collect.sh" --repo "$rd" --base main --head feature/x --out "$out/rd-off" --no-tools 2>&1); rc=$?
+assert_eq "1" "$rc" "collect.sh refuses a --head that is not checked out"
+assert_contains "$r" "not checked out" "the refusal says the head is not checked out"
+assert_file "$out/rd-off/status-before.txt" "the baselines are taken before the refusal, so assert-clean can still verify"
+[[ -e "$out/rd-off/diff.patch" ]] && fail "no diff is written for a refused head" || pass
+
 finish

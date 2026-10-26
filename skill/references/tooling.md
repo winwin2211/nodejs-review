@@ -3,12 +3,15 @@
 All scripts live in `scripts/` next to this file. `$SKILL` is the directory
 containing `SKILL.md`. `$WORK` is a directory created with `mktemp -d`; it
 must be outside the reviewed repo. Scripts need `git`, `jq`, `node` and
-`perl` (the timeout wrapper) on PATH. Export `REVIEW_TOOL=nodejs-review` and
-`ASSERT_CLEAN_PRUNE=node_modules` before calling any of them.
+`perl` (the timeout wrapper) on PATH. Export `ASSERT_CLEAN_PRUNE=node_modules`
+before calling any of them. The shared scripts name this skill (log prefix,
+MR marker) from the `name` in `SKILL.md`, never from the environment.
 
 `$REPO` is the user's checkout. `$REVIEW_REPO` is the tree that holds the
-code under review: the same as `$REPO` in local modes, the temporary
-worktree `$WORK/wt` in MR mode (`gitlab.md`). Everything that reads the
+code under review: the same as `$REPO` when that is what the checkout holds
+(no target, or a branch that is checked out with nothing uncommitted), the
+temporary worktree `$WORK/wt` otherwise (MR mode in `gitlab.md`, branch mode
+in `workflow.md` step 0.4). Everything that reads the
 reviewed code — `collect.sh`, `find-specs.sh`, the project rule files —
 takes `$REVIEW_REPO`; only the no-artifact baseline and check
 (`--status-repo`, `assert-clean.sh --repo`) take `$REPO`.
@@ -23,8 +26,13 @@ Branch, or MR head checked out in `$WORK/wt`:
 
     bash "$SKILL/scripts/collect.sh" --repo "$REVIEW_REPO" --head <ref-or-sha> --out "$WORK" [--base <ref>] [--status-repo "$REPO"] [--install] [--package <dir>] [--no-tools] [--full-tests] [--full-audit]
 
+A `--head` that is not checked out in `--repo` makes `collect.sh` exit 1
+after taking the baselines: the stack, `node_modules` and every tool read the
+working tree, so they would describe the checkout instead.
+
 `--status-repo` names the working tree the no-artifact baselines are taken
-from; it defaults to `--repo`. Pass it whenever `--repo` is the MR worktree.
+from; it defaults to `--repo`. Pass it whenever `--repo` is the temporary
+worktree.
 `--install` installs dependencies into that worktree (frozen lockfile, no
 lifecycle scripts) when its lockfile differs from the checkout's; it is
 refused when `--repo` is the checkout itself.
@@ -118,8 +126,12 @@ wrote at its start. `ASSERT_CLEAN_PRUNE=node_modules` prunes `node_modules`
 from that scan (tool caches such as `node_modules/.vite` live there and are
 not source); `git status --ignored` still covers everything else. Outside
 the guarantee: `.git` internal writes made by `git fetch` or worktree
-add/remove, and a write that restores the file's previous mtime. Anything
-else that writes inside the repo while the review runs is listed too: the
+add/remove, a write that restores the file's previous mtime, and a file
+whose mtime is later than the check itself (a copy with a skewed clock, an
+archive's timestamps), which would otherwise be listed on every run. A
+directory the scan cannot read (another user's, mode 000) is named under
+`Not scanned`; with nothing else found it makes the script exit 1, since the
+check is incomplete. Anything else that writes inside the repo while the review runs is listed too: the
 user's editor, a service logging into the repo, an IDE. When `git status` is
 otherwise unchanged the script cannot tell those writes from a test's, so it
 exits 3 instead of 2 and its banner says who may have written them;
@@ -132,7 +144,9 @@ git hook (husky's included) runs during the review.
 
 typecheck 180s, lint 180s, metrics 120s, test 600s, audit 120s; override with
 `NODEJS_REVIEW_TIMEOUT_TYPECHECK|LINT|METRICS|TEST|AUDIT=<seconds>` in the
-environment of `collect.sh`. Typecheck and metrics budgets cover the head run
+environment of `collect.sh` (whole seconds, at least 1; anything else, such
+as `20m` or `0`, makes `collect.sh` exit 1 naming the variable before it
+touches the repo). Typecheck and metrics budgets cover the head run
 and the merge-base run together; a baseline that does not fit is
 `no-baseline(timeout)` and the head result stands. A wrapper timeout is
 `UNAVAILABLE(timeout)`, never `FAIL`, and kills every process the tool

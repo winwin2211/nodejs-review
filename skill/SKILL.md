@@ -30,7 +30,7 @@ earlier step fails.
 | `--no-tools` | skip typecheck/lint/metrics/test/audit |
 | `--full-tests` | run the whole suite, not only tests related to the changed files |
 | `--full-audit` | run the dependency audit even when the lockfile did not change |
-| `--install` | MR mode only: install dependencies into the temporary worktree when its lockfile differs from the checkout's |
+| `--install` | an MR, or a branch reviewed from a temporary worktree: install dependencies into that worktree when its lockfile differs from the checkout's |
 | `--package <dir>` | monorepo: run the tools for this workspace package only |
 | `--spec <path>` | force this file/dir as the spec |
 | `--skip-sdd "<reason>"` | downgrade missing spec/plan to MAJOR; reason is printed |
