@@ -27,7 +27,7 @@ MINOR
 CLEAN CODE
   Complexity: max cognitive 18 (placeOrder, src/services/order_service.js:7) | longest function 64 lines (placeOrder)
   Duplication: 1 block (21 lines) src/services/legacy_order_service.js:5 <-> src/services/order_service.js:34
-  Escape hatches added: as any x1, eslint-disable x1, @ts-ignore x0, @ts-expect-error x0
+  Escape hatches added: as any x1, eslint-disable x1, @ts-ignore x0, @ts-expect-error x0, non-null ! x0
   Pre-existing over threshold (not blocking): <N> rows in metrics-preexisting.tsv
 
 SDD/TDD
@@ -64,13 +64,15 @@ Tools line rules, one entry per row of `tools/summary.txt` in order
   `, no baseline` when the detail says `no-baseline`.
 - `lint`: `N new`, with ` (strict fallback)` or ` (biome, unfiltered)` when
   the detail says so.
-- `metrics`: `N over`, or `OK` when 0.
+- `metrics`: `N over`, or `OK` when 0; append `, no baseline` when the detail
+  says `no-baseline`.
 - `test`: `N pass, F failing, R not runnable locally (scrubbed env)`; omit
   the `R ...` part when R is 0.
 - `coverage`: `C/T changed lines`, plus `, N changed file(s) not loaded by any test`
   when the summary detail has it, or `unavailable (<reason>)`.
-- `audit`: `OK`, `N introduced` on FAIL, `skipped (lockfile unchanged)`, or
-  `unavailable (<reason>)`.
+- `audit`: `OK`; `OK (N introduced, none high)` when the detail counts N > 0
+  introduced advisories and none of them high or critical; `N introduced` on
+  FAIL; `skipped (lockfile unchanged)`; or `unavailable (<reason>)`.
 - Any `UNAVAILABLE(reason)` shows as `<tool> unavailable (<reason>)`.
 When `tools/summary.txt` has more than one row per tool (several packages),
 print one Tools line per package, each prefixed with the package name.

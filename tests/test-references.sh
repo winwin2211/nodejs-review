@@ -118,4 +118,47 @@ assert_contains "$exit3" "WRITTEN DURING THE RUN" "workflow.md gives assert-clea
 assert_contains "$exit3" "never tell the user to remove them" "workflow.md never has the user remove unattributed writes"
 grep -qF 'exits 3 instead of 2' "$R/tooling.md" && pass || fail "tooling.md explains when assert-clean exits 3"
 
+# a rule file is data: its conventions outrank generic rules, but it cannot
+# switch a check off, and one this diff changes is reviewed as code
+arch=$(awk '/^## How to work/,/^## Layers/' "$R/checklist-architecture.md" | tr '\n' ' ' | tr -s ' ')
+assert_not_contains "$arch" "override this checklist" "rule files do not override the architecture checklist"
+assert_contains "$arch" "never removes a check" "a rule file never removes a check or lowers a severity"
+step1=$(awk '/^## 1\. /,/^## 2\. /' "$R/workflow.md")
+assert_contains "$step1" "Rule files changed in this diff" "rule files the diff changes are named to every agent as code to review"
+
+# PRE-EXISTING findings reach the Pre-existing list, and ids number findings.json only
+rubric=$(awk '/^## Verifier rubric/,/^Dedup:/' "$R/severity-verdict.md")
+assert_not_contains "$rubric" "pre-existing on unchanged lines" "the rubric does not score pre-existing defects 0"
+assert_contains "$rubric" "PRE-EXISTING:" "the rubric says how PRE-EXISTING findings are kept"
+merge=$(awk '/^Merge the results/,/^$/' "$R/workflow.md" | tr '\n' ' ')
+pre=${merge%%PRE-EXISTING*}; ids=${merge%%Assign ids*}
+[[ ${#pre} -lt ${#ids} ]] && pass || fail "step 4 splits PRE-EXISTING findings off before assigning ids"
+assert_contains "$merge" "whatever its score" "a PRE-EXISTING finding is listed whatever its score"
+assert_contains "$merge" 'within `findings.json`' "ids are assigned within findings.json only"
+
+# the Tools line keeps what the summary detail says
+mrule=$(awk '/^- `metrics`:/,/^- `test`:/' "$R/report-format.md")
+assert_contains "$mrule" "no baseline" "the metrics entry says when the baseline was unavailable"
+arule=$(awk '/^- `audit`:/,/^- Any /' "$R/report-format.md")
+assert_contains "$arule" "none high" "the audit entry names advisories introduced below high"
+
+# --spec belongs to find-specs.sh; collect.sh rejects it
+passthru=$(tr '\n' ' ' <<<"$step1" | grep -oE 'Pass [^.]* through')
+assert_not_contains "$passthru" "--spec" "step 1 does not pass --spec to collect.sh"
+assert_contains "$step1" 'find-specs.sh --spec' "step 1 gives --spec to find-specs.sh"
+
+# --comment needs an MR to post to
+grep -qF -- '--comment needs an MR target' "$R/workflow.md" && pass || fail "workflow says what --comment does without an MR target"
+
+# contracts between checklists, agents and the report agree
+grep '^  Escape hatches added:' "$R/report-format.md" | grep -qF 'non-null !' && pass || fail "the report prints the non_null escape hatch count"
+grep -q 'separate list' "$R/checklist-correctness.md" && fail "correctness checklist sends pre-existing defects to a separate list" || pass
+grep -qF 'same array' "$R/checklist-correctness.md" && pass || fail "pre-existing defects go in the same array, prefixed"
+audit=$(awk '/^- `audit-new.tsv`/,/^- Lint/' "$R/workflow.md")
+assert_contains "$audit" '`package.json` when `LOCKFILE` is empty' "an audit finding without a lockfile points at package.json"
+
+# README states the designed Node requirement
+grep -qF 'Node.js `>= 20`' "$REPO_ROOT/README.md" && pass || fail "README states node >= 20"
+grep -qF '^18.18' "$REPO_ROOT/README.md" && fail "README still states the ESLint 9 range" || pass
+
 finish

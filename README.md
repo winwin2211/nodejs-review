@@ -29,9 +29,13 @@ dependency audit (only when `package.json` or the lockfile changed, or with `--f
 `--toolbelt-only` reinstalls the toolbelt. Open a new Claude Code session
 afterwards: agents installed mid-session are not dispatchable by type.
 
-Requires `git`, `jq`, `perl` (timeouts) and Node.js `^18.18 || ^20.9 || >=21.1`
-with `npm` (the toolbelt's ESLint 9 range). `glab` is needed for MR targets
-and `--comment`. The toolbelt (`skill/toolbelt/`) pins ESLint, typescript-eslint,
+Requires `git`, `jq`, `perl` (timeouts) and Node.js `>= 20` with `npm`.
+The toolbelt's lockfile pins `eslint-visitor-keys@5.0.1`
+(`^20.19.0 || ^22.13.0 || >=24`) and `brace-expansion@5.0.12`
+(`20 || >=22`), so `npm ci` in `install.sh` warns (`EBADENGINE`) on Node
+below 20.19, on 21, and on 22 below 22.13. The test suite passes on 22.4.0
+despite that warning; the other versions in that set are not tested.
+`glab` is needed for MR targets and `--comment`. The toolbelt (`skill/toolbelt/`) pins ESLint, typescript-eslint,
 eslint-plugin-sonarjs, jscpd and TypeScript for the metrics and the fallback
 lint. The reviewed repo's own `tsc`, linter and test runner run from its
 `node_modules/.bin`: without a repo ESLint or Biome, lint uses the toolbelt's
