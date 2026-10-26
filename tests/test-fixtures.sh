@@ -43,8 +43,7 @@ grep -qF "assert.deepEqual(res.body, [{ id: 'o1', user: 'u1', qty: 2 }])" "$out/
 assert_file "$out/clean/docs/superpowers/specs/2026-10-01-NR-100-orders-design.md" "clean spec"
 assert_file "$out/clean/docs/superpowers/plans/2026-10-01-NR-100-orders-plan.md" "clean plan"
 for h in 'Goal' 'Scope' 'Current' 'Design' 'Contract' 'Error' 'Data' 'Risk' 'Testing' 'Acceptance'; do
-  grep -qi "^## .*$h" "$out/clean/docs/superpowers/specs/2026-09-01-NR-100-orders-design.md" 2>/dev/null \
-    || grep -qi "^## .*$h" "$out/clean/docs/superpowers/specs/2026-10-01-NR-100-orders-design.md" && pass || fail "clean spec has a $h section"
+  grep -qi "^## .*$h" "$out/clean/docs/superpowers/specs/2026-10-01-NR-100-orders-design.md" && pass || fail "clean spec has a $h section"
 done
 
 # ts: the feature branch breaks an unchanged caller; main typechecks.

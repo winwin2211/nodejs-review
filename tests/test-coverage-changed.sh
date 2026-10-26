@@ -60,4 +60,31 @@ for rec in vitest jest; do
   assert_contains "$(cat "$d/$rec.txt")" $'src/calc.js\t0\t1\t8\tmul:7-9' "$rec recording: the untested mul body is uncovered"
 done
 
+# the node:test recording (repo-relative SF paths, six files): db.js ran line 9 but not the branch on 7-8
+printf 'src/db.js\t7\nsrc/db.js\t8\nsrc/db.js\t9\n' > "$d/added-db.tsv"
+bash "$S/coverage-changed.sh" "$REC/node-test-lcov.info" "$d/added-db.tsv" "$repo" > "$d/node-test.txt"
+assert_contains "$(cat "$d/node-test.txt")" $'src/db.js\t1\t3\t7-8\t' "node:test recording: the unexecuted branch lines are uncovered"
+assert_eq "TOTAL=1/3" "$(tail -1 "$d/node-test.txt")" "node:test recording: the total counts db.js only"
+
+# a TypeScript source, as Vitest with coverage-v8 maps it back to .ts
+printf '%s\n' 'import x from "y";' 'export function handle() {' '  return x;' '}' 'export function other() {' '  return 1;' '}' > "$repo/src/svc.ts"
+cat > "$d/lcov-ts.info" <<EOF
+TN:
+SF:$repo/src/svc.ts
+FN:2,handle
+FN:5,other
+FNDA:0,handle
+FNDA:1,other
+DA:2,0
+DA:3,0
+DA:6,1
+LF:3
+LH:1
+end_of_record
+EOF
+printf 'src/svc.ts\t2\nsrc/svc.ts\t3\nsrc/svc.ts\t6\n' > "$d/added-ts.tsv"
+bash "$S/coverage-changed.sh" "$d/lcov-ts.info" "$d/added-ts.tsv" "$repo" > "$d/ts.txt"
+assert_contains "$(cat "$d/ts.txt")" $'src/svc.ts\t1\t3\t2-3\thandle:2-4' "a .ts source: lines and the untested function map to the .ts path"
+assert_eq "TOTAL=1/3" "$(tail -1 "$d/ts.txt")" "a .ts source: the total"
+
 finish

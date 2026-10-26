@@ -52,6 +52,23 @@ bash "$SYNC" --root "$root" >/dev/null
 assert_exit 0 bash "$SYNC" --check --root "$root"
 assert_eq "$(cat "$sib/skill/scripts/lib.sh")" "$(cat "$root/skill/scripts/lib.sh")" "sync restores the sibling's content"
 
+# sync says what it did, and never overwrites an uncommitted local edit without --force
+gr=$(tmpdir)
+for f in $SHARED; do mkdir -p "$gr/$(dirname "$f")"; cp "$sib/$f" "$gr/$f"; done
+git -C "$gr" init -q; git -C "$gr" add -A; git -C "$gr" -c user.email=f@e -c user.name=f commit -q -m base
+r=$(bash "$SYNC" --root "$gr" 2>&1)
+assert_contains "$r" "unchanged skill/scripts/lib.sh" "sync reports a matching copy as unchanged"
+assert_not_contains "$r" "synced" "sync copies nothing that already matches"
+echo "# my local edit" >> "$gr/skill/scripts/lib.sh"
+r=$(bash "$SYNC" --root "$gr" 2>&1); rc=$?
+assert_eq "1" "$rc" "sync refuses to overwrite an uncommitted local edit"
+assert_contains "$r" "locally modified: skill/scripts/lib.sh" "the refusal names the file"
+grep -q '# my local edit' "$gr/skill/scripts/lib.sh" && pass || fail "the uncommitted local edit survives a refused sync"
+r=$(bash "$SYNC" --root "$gr" --force 2>&1); rc=$?
+assert_eq "0" "$rc" "--force overwrites the local edit"
+assert_contains "$r" "synced skill/scripts/lib.sh" "--force names the file it replaced"
+grep -q '# my local edit' "$gr/skill/scripts/lib.sh" && fail "--force replaced the local edit with the sibling's content" || pass
+
 # a missing sibling is a usage error (exit 2), distinct from drift (exit 1)
 assert_exit 2 env GO_REVIEW_DIR="$fake/does-not-exist" bash "$SYNC" --check
 

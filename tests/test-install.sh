@@ -18,7 +18,6 @@ CLAUDE_HOME="$home" bash "$REPO_ROOT/install.sh" >/dev/null
 assert_link "$home/skills/nodejs-review" "skill symlink survives reinstall"
 
 # a non-symlink in the way is never replaced
-mkdir -p "$home/skills/nodejs-review-real"
 rm "$home/skills/nodejs-review"; mkdir "$home/skills/nodejs-review"
 assert_exit 1 env CLAUDE_HOME="$home" bash "$REPO_ROOT/install.sh"
 [[ -d "$home/skills/nodejs-review" && ! -L "$home/skills/nodejs-review" ]] && pass || fail "a real directory at the link path survives"

@@ -71,8 +71,9 @@ grep -qi 'never source' "$R/workflow.md" && grep -qF "sed -n 's/^BASE=//p'" "$R/
 grep -q 'ASSERT_CLEAN_PRUNE=node_modules' "$R/tooling.md" && pass || fail "tooling sets the prune list"
 grep -qi 'never' "$R/tooling.md" && grep -q 'npx' "$R/tooling.md" && pass || fail "tooling forbids npx"
 grep -q 'NODEJS_REVIEW_TIMEOUT_' "$R/tooling.md" && pass || fail "tooling documents budgets"
+# each tool row has its own interpretation bullet (- `typecheck FAIL`: ..., - `lint`: ...)
 for t in typecheck lint metrics test coverage audit; do
-  grep -q "\`$t\`" "$R/tooling.md" || grep -q "^| $t" "$R/tooling.md" || grep -q "$t " "$R/tooling.md" && pass || fail "tooling mentions the $t row"
+  grep -qE "^- \`$t( [A-Z][^\`]*)?\`:" "$R/tooling.md" && pass || fail "tooling explains how to read the $t row"
 done
 grep -qF 'whole seconds' "$R/tooling.md" && pass || fail "tooling says budgets are whole seconds"
 # the shared scripts take our name from SKILL.md; nothing has the orchestrator export it
