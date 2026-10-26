@@ -64,8 +64,8 @@ Final no-artifact check (always run, even after errors):
 | `tools/metrics.json`, `metrics-base.json`, `tools/jscpd/jscpd-report.json` | raw toolbelt runs at head and base, raw jscpd |
 | `tools/metrics.tsv`, `metrics-preexisting.tsv` | `file line metric value threshold severity function origin`; the first is findings (`new`/`hunk`), the second was already over at the merge-base |
 | `tools/test.json` or `tools/test.txt` | runner report (Vitest/Jest JSON, node:test TAP) |
-| `tools/test-classified.txt` | `file<TAB>test<TAB>FAIL|NOT_RUNNABLE` for failing tests, then `PASS= FAIL= NOT_RUNNABLE= SKIP=` |
-| `tools/coverage/lcov.info`, `tools/coverage-changed.txt` | lcov from the runner; per changed source file (tests and docs are not lines under test) `covered total uncovered-ranges uncovered-functions`, then `TOTAL=c/t`; a file no test loaded is `0 0 <its added lines> NO_RECORD` and is not in `TOTAL` |
+| `tools/test-classified.txt` | `file<TAB>test<TAB>FAIL|NOT_RUNNABLE` for failing tests, then `PASS= FAIL= NOT_RUNNABLE= SKIP=`; with several packages the top-level file holds every package's rows and ends with the counts summed over them |
+| `tools/coverage/lcov.info`, `tools/coverage-changed.txt` | lcov from the runner; per changed source file (tests and docs are not lines under test) `covered total uncovered-ranges uncovered-functions`, then `TOTAL=c/t`; a file no test loaded is `0 0 <its added lines> NO_RECORD` and is not in `TOTAL`; with several packages the top-level `TOTAL` sums the packages whose coverage ran |
 | `tools/audit.json`, `tools/audit-new.tsv` | raw audit; `package version severity advisory introduced|preexisting` |
 | `specs.tsv`, `specs-all.txt` | spec candidates as in go-review (`path<TAB>convention<TAB>signals`) |
 
@@ -98,7 +98,12 @@ Interpretation rules:
   linter evidence; agents must then not assume the linter caught anything.
 - `UNAVAILABLE(no-node_modules)`: the checkout has no `node_modules`; tell
   the user to install (the skill never does). `UNAVAILABLE(lockfile-differs)`
-  (MR mode): the MR changed the lockfile; rerun with `--install`.
+  (temporary worktree): the reviewed head changed the lockfile; rerun with
+  `--install`.
+- `test UNAVAILABLE(no-tests)`: the runner matched no test file (TypeScript
+  tests under a custom script, a related run that found no test for the
+  changed files); the detail names the `test` script. It is no evidence
+  either way, never a pass, and `coverage` says the same.
 
 ## Never run
 
@@ -117,7 +122,10 @@ scrubbed environment (`PATH HOME TMPDIR LANG LC_ALL TERM` plus `CI=true
 NODE_ENV=test NO_COLOR=1`, nothing else) so variables that point at real
 services are absent; a test that then fails on a missing variable or a
 refused connection is `NOT_RUNNABLE`. `CI=true` also stops Vitest and Jest
-from writing new snapshots and disables watch mode.
+from writing new snapshots and disables watch mode. `TMPDIR` is a directory
+`collect.sh` makes beside the caller's and removes when it exits, so what
+the tests and the runner leave there (node's `node-coverage-*` directories)
+goes with it.
 
 The no-artifact guarantee in `assert-clean.sh` compares tracked status,
 ignored-file status, and the stash list before and after the run, and lists

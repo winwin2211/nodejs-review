@@ -28,7 +28,9 @@ runner_timeout_ms() { local ms=$(( (T_TEST - 10) * 1000 )); [[ $ms -lt 1000 ]] &
 # Scrubbed environment for anything that executes repository code: an
 # allow-list, never the caller's variables, which may point at real services.
 # An array rather than a function because run_with_timeout execs its arguments.
-SCRUB=(env -i "PATH=$PATH" "HOME=$HOME" "TMPDIR=${TMPDIR:-/tmp}" "LANG=${LANG:-C.UTF-8}" "LC_ALL=${LC_ALL:-}" TERM=dumb CI=true NODE_ENV=test NO_COLOR=1)
+# set_scrub TMP rebuilds it with TMP as TMPDIR (the tool runs get their own).
+set_scrub() { SCRUB=(env -i "PATH=$PATH" "HOME=$HOME" "TMPDIR=$1" "LANG=${LANG:-C.UTF-8}" "LC_ALL=${LC_ALL:-}" TERM=dumb CI=true NODE_ENV=test NO_COLOR=1); }
+set_scrub "${TMPDIR:-/tmp}"
 scrubbed_run() { "${SCRUB[@]}" "$@"; }
 
 # find_bin NAME PKGDIR [ROOT] -> the first node_modules/.bin/NAME walking from
@@ -103,6 +105,7 @@ REPO=$(cd "$REPO" && pwd -P)
 STATUS_REPO=$(cd "$STATUS_REPO" && pwd -P)
 [[ -n "$BASE" ]] || BASE=$(resolve_base "$REPO")
 assert_outside "$OUT" "$REPO"
+assert_outside "$OUT" "$STATUS_REPO"
 mkdir -p "$OUT/tools"
 OUT=$(cd "$OUT" && pwd -P)
 
@@ -133,7 +136,7 @@ MB=$(merge_base "$REPO" "$BASE" "$HEAD_SHA")
 # The parsers below read git's default patch shape. Pin it against the user's
 # config: color, an external diff tool, mnemonic or no prefixes, quoted
 # non-ASCII paths and suppressed blank context would each empty or skew them.
-GIT=(git -C "$REPO" -c core.quotePath=false -c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.suppressBlankEmpty=false)
+GIT=(git -C "$REPO" -c core.quotePath=false -c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.suppressBlankEmpty=false -c diff.renames=true)
 DIFF=(diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/)
 if [[ "$MODE" == "worktree" ]]; then
   "${GIT[@]}" "${DIFF[@]}" "$MB" > "$OUT/diff.patch"
@@ -239,11 +242,12 @@ deps_identical() {
 }
 # link_node_modules SRC_TREE DST_TREE -> symlink the root and per-package
 # node_modules that exist in SRC into DST (a write under $OUT or $WORK/wt,
-# never under the reviewed checkout)
+# never under the reviewed checkout). A package the change adds has no
+# directory in the merge-base tree, so nothing is linked for it there.
 link_node_modules() {
   local p
   for p in . "${PKG_LIST[@]}"; do
-    if [[ -d "$1/$p/node_modules" && ! -e "$2/$p/node_modules" ]]; then
+    if [[ -d "$1/$p/node_modules" && -d "$2/$p" && ! -e "$2/$p/node_modules" ]]; then
       ln -s "$(cd "$1/$p/node_modules" && pwd -P)" "$2/$p/node_modules"
     fi
   done
@@ -310,6 +314,20 @@ if [[ $NO_TOOLS -eq 1 ]]; then
 fi
 MULTI=0; [[ ${#PKG_LIST[@]} -gt 1 ]] && MULTI=1
 
+# The tool runs get their own TMPDIR, removed when collect.sh exits: node
+# --test --experimental-test-coverage leaves a node-coverage-* directory in
+# TMPDIR, and a repo's tests leave their own temp files there. It sits beside
+# the caller's TMPDIR, not under $OUT, so a test's unix socket path stays short.
+RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/nr-run.XXXXXX")
+set_scrub "$RUN_TMP"
+BASE_ADDED=0
+cleanup() {
+  chmod -R u+rwx "$RUN_TMP" 2>/dev/null || true; rm -rf "$RUN_TMP"
+  if [[ $BASE_ADDED -eq 1 ]]; then cleanup_base; fi
+  return 0
+}
+trap cleanup EXIT
+
 # Merge-base baseline: a second worktree so typecheck and metrics can report
 # only what the change introduced. It shares node_modules by symlink when the
 # dependencies are identical; otherwise typecheck has no baseline and falls
@@ -322,7 +340,7 @@ cleanup_base() {
 }
 # hooksPath=/dev/null: a checkout runs post-checkout, and husky points hooks at a tracked directory
 if git -C "$REPO" -c core.hooksPath=/dev/null worktree add -q --detach "$BASE_WT" "$MB" 2>"$OUT/tools/base-worktree.txt"; then
-  trap cleanup_base EXIT
+  BASE_ADDED=1
   if [[ "$NODE_MODULES" != absent ]] && deps_identical "$REPO" "$BASE_WT"; then
     link_node_modules "$REPO" "$BASE_WT"
   else
@@ -375,7 +393,7 @@ run_typecheck() {
   fi
   # tsc prints paths relative to the package; typecheck-new.txt is repo-relative like every other output
   local prefix=""; [[ "$PKG" != "." ]] && prefix="$PKG/"
-  bash "$HERE/typecheck-diff.sh" "$TOOLS_DIR/typecheck.txt" "$base_file" | sed "s#^#$prefix#" > "$TOOLS_DIR/typecheck-new.txt"
+  bash "$HERE/typecheck-diff.sh" "$TOOLS_DIR/typecheck.txt" "$base_file" | P="$prefix" awk '{ print ENVIRON["P"] $0 }' > "$TOOLS_DIR/typecheck-new.txt"
   local n_head n_new; n_head=$(count_ts_errors "$TOOLS_DIR/typecheck.txt"); n_new=$(grep -c . "$TOOLS_DIR/typecheck-new.txt" || true)
   [[ $MULTI -eq 1 ]] && cat "$TOOLS_DIR/typecheck-new.txt" >> "$OUT/tools/typecheck-new.txt"
   local status=OK; [[ $n_new -gt 0 ]] && status=FAIL
@@ -520,11 +538,22 @@ run_test() {
   if ! bash "$HERE/classify-tests.sh" "$RUNNER" "$report" > "$TOOLS_DIR/.classified" 2> "$TOOLS_DIR/classify.txt"; then
     summary test "UNAVAILABLE(bad-report)" "$(head -1 "$TOOLS_DIR/classify.txt" | cut -c1-120)"; summary coverage "UNAVAILABLE(bad-report)" ""; rm -f "$TOOLS_DIR/.classified"; return
   fi
-  sed "s#^$PKG_ABS/#$prefix#" "$TOOLS_DIR/.classified" > "$TOOLS_DIR/test-classified.txt"; rm -f "$TOOLS_DIR/.classified"
-  local counts p fl n
+  # paths in the report are absolute; the package's own prefix becomes repo-relative (text, never a sed pattern)
+  A="$PKG_ABS/" P="$prefix" awk 'index($0, ENVIRON["A"]) == 1 { $0 = ENVIRON["P"] substr($0, length(ENVIRON["A"]) + 1) } { print }' \
+    "$TOOLS_DIR/.classified" > "$TOOLS_DIR/test-classified.txt"; rm -f "$TOOLS_DIR/.classified"
+  local counts p fl n sk
   counts=$(tail -1 "$TOOLS_DIR/test-classified.txt")
   p=$(sed -E 's/.*PASS=([0-9]+).*/\1/' <<<"$counts"); fl=$(sed -E 's/.*FAIL=([0-9]+).*/\1/' <<<"$counts"); n=$(sed -E 's/.*NOT_RUNNABLE=([0-9]+).*/\1/' <<<"$counts")
-  [[ $MULTI -eq 1 ]] && grep -v '^PASS=' "$TOOLS_DIR/test-classified.txt" >> "$OUT/tools/test-classified.txt"
+  sk=$(sed -E 's/.*SKIP=([0-9]+).*/\1/' <<<"$counts")
+  # a runner that matched no test file (TypeScript tests under a custom script, a
+  # related run that found nothing) still exits 0: that is no evidence, not a pass
+  if [[ $((p + fl + n + sk)) -eq 0 ]]; then
+    summary test "UNAVAILABLE(no-tests)" "no test ran; test script: $(jq -r '.scripts.test // "none"' "$PKG_ABS/package.json" 2>/dev/null | tr '\n\t' '  ' | cut -c1-80)"
+    summary coverage "UNAVAILABLE(no-tests)" ""; return
+  fi
+  SUM_P=$((SUM_P + p)); SUM_F=$((SUM_F + fl)); SUM_N=$((SUM_N + n)); SUM_S=$((SUM_S + sk)); HAVE_TESTS=1
+  # grep -v selects nothing when every test passed (only the counts line): not an error
+  if [[ $MULTI -eq 1 ]]; then grep -v '^PASS=' "$TOOLS_DIR/test-classified.txt" >> "$OUT/tools/test-classified.txt" || true; fi
   local detail="$p pass, $fl failing, $n not runnable locally (scrubbed env)"
   if [[ "$fl" -gt 0 ]]; then summary test FAIL "$detail"; else summary test OK "$detail"; fi
   if [[ -n "$cov_note" ]]; then summary coverage "UNAVAILABLE($cov_note)" "install @vitest/coverage-v8 in the repo"; return; fi
@@ -535,7 +564,8 @@ run_test() {
   bash "$HERE/coverage-changed.sh" "$TOOLS_DIR/coverage/lcov.info" "$TOOLS_DIR/added-src.tsv" "$REPO" "$PKG" > "$TOOLS_DIR/coverage-changed.txt"
   local tot nr; tot=$(tail -1 "$TOOLS_DIR/coverage-changed.txt"); tot=${tot#TOTAL=}
   nr=$(grep -c $'\tNO_RECORD$' "$TOOLS_DIR/coverage-changed.txt" || true)
-  [[ $MULTI -eq 1 ]] && grep -v '^TOTAL=' "$TOOLS_DIR/coverage-changed.txt" >> "$OUT/tools/coverage-changed.txt"
+  SUM_C=$((SUM_C + ${tot%%/*})); SUM_T=$((SUM_T + ${tot#*/})); HAVE_COV=1
+  if [[ $MULTI -eq 1 ]]; then grep -v '^TOTAL=' "$TOOLS_DIR/coverage-changed.txt" >> "$OUT/tools/coverage-changed.txt" || true; fi
   local detail="$tot changed lines"
   [[ "$nr" -eq 1 ]] && detail+=", 1 changed file not loaded by any test"
   [[ "$nr" -gt 1 ]] && detail+=", $nr changed files not loaded by any test"
@@ -577,6 +607,7 @@ if [[ $MULTI -eq 1 ]]; then
   : > "$OUT/tools/typecheck-new.txt"; : > "$OUT/tools/metrics.tsv"; : > "$OUT/tools/metrics-preexisting.tsv"; echo '[]' > "$OUT/tools/lint-changed.json"
   : > "$OUT/tools/test-classified.txt"; : > "$OUT/tools/coverage-changed.txt"; : > "$OUT/tools/audit-new.tsv"
 fi
+SUM_P=0 SUM_F=0 SUM_N=0 SUM_S=0 SUM_C=0 SUM_T=0 HAVE_TESTS=0 HAVE_COV=0
 for i in "${!PKG_LIST[@]}"; do
   PKG=${PKG_LIST[$i]}; RUNNER=${RUNNER_LIST[$i]:-none}; LINTER=${LINTER_LIST[$i]:-none}
   PKG_ABS=$(cd "$REPO/$PKG" && pwd -P)
@@ -594,3 +625,10 @@ for i in "${!PKG_LIST[@]}"; do
   run_test
   run_audit
 done
+# with several packages the top-level files end like a single package's: with
+# the counts and the changed-line total summed over the packages that ran
+if [[ $MULTI -eq 1 ]]; then
+  [[ $HAVE_TESTS -eq 1 ]] && echo "PASS=$SUM_P FAIL=$SUM_F NOT_RUNNABLE=$SUM_N SKIP=$SUM_S" >> "$OUT/tools/test-classified.txt"
+  [[ $HAVE_COV -eq 1 ]] && echo "TOTAL=$SUM_C/$SUM_T" >> "$OUT/tools/coverage-changed.txt"
+fi
+exit 0

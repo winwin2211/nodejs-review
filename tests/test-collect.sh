@@ -63,6 +63,8 @@ git -C "$rd" checkout -q -b feature/x
 git -C "$rd" mv a.js b.js && git -C "$rd" rm -q c.js
 printf 'export const t = 1;\nexport const t2 = 2;\n' > "$rd/__tests__/a.test.js"
 git -C "$rd" add -A && git -C "$rd" commit -q -m "rename and delete"
+# rename detection must not depend on the user's git config
+git -C "$rd" config diff.renames false
 bash "$S/collect.sh" --repo "$rd" --base main --head feature/x --out "$out/rd" --no-tools
 assert_eq "b.js" "$(cat "$out/rd/changed-src-files.txt")" "renamed file listed under its new name only"
 assert_not_contains "$(cat "$out/rd/added-lines.tsv")" "c.js" "deleted file has no added lines"
@@ -498,5 +500,97 @@ assert_eq "1" "$rc" "collect.sh refuses a --head that is not checked out"
 assert_contains "$r" "not checked out" "the refusal says the head is not checked out"
 assert_file "$out/rd-off/status-before.txt" "the baselines are taken before the refusal, so assert-clean can still verify"
 [[ -e "$out/rd-off/diff.patch" ]] && fail "no diff is written for a refused head" || pass
+
+# --- --out inside --status-repo (the user's checkout behind a worktree) is refused like --out inside --repo ---
+sow=$(tmpdir)
+git -C "$rd" worktree add -q --detach "$sow/wt" HEAD
+r=$(bash "$S/collect.sh" --repo "$sow/wt" --status-repo "$rd" --base main --head WORKTREE --out "$rd/.review-out" --no-tools 2>&1); rc=$?
+assert_eq "1" "$rc" "--out inside --status-repo exits 1"
+assert_contains "$r" "refusing to write inside the reviewed repo" "--out inside --status-repo is refused by name"
+[[ -e "$rd/.review-out" ]] && fail "a refused --out inside --status-repo creates nothing" || pass
+git -C "$rd" worktree remove --force "$sow/wt"
+
+# mk_node_test DIR [notests] -> a node:test repo on feature/x with one changed source file
+mk_node_test() {
+  git -C "$1" init -q -b main
+  git -C "$1" config user.email fixture@example.com; git -C "$1" config user.name fixture
+  echo '{"name":"nt","type":"module","scripts":{"test":"node --test"}}' > "$1/package.json"
+  echo 'export const add = (a, b) => a + b;' > "$1/calc.js"
+  if [[ "${2:-}" != notests ]]; then
+    mkdir -p "$1/test"
+    printf "import test from 'node:test';\nimport assert from 'node:assert';\nimport { add } from '../calc.js';\ntest('add', () => assert.equal(add(1, 2), 3));\n" > "$1/test/calc.test.js"
+  fi
+  git -C "$1" add -A && git -C "$1" commit -q -m base
+  git -C "$1" checkout -q -b feature/x
+  echo 'export const sub = (a, b) => a - b;' >> "$1/calc.js"
+  git -C "$1" add -A && git -C "$1" commit -q -m change
+}
+
+# --- tool runs leave nothing in TMPDIR: node --test --experimental-test-coverage leaves node-coverage-* there ---
+nt=$(tmpdir); mk_node_test "$nt"
+ntmp=$(tmpdir)
+TMPDIR="$ntmp" bash "$S/collect.sh" --repo "$nt" --base main --head feature/x --out "$out/nt" >/dev/null 2>&1
+assert_contains "$(cat "$out/nt/tools/summary.txt")" $'test\tOK\t1 pass' "node:test: the one test passes"
+assert_eq "" "$(ls -A "$ntmp")" "node:test: nothing is left in TMPDIR after the run"
+
+# --- a run that found no tests is UNAVAILABLE(no-tests), never test OK 0 pass ---
+nz=$(tmpdir); mk_node_test "$nz" notests
+bash "$S/collect.sh" --repo "$nz" --base main --head feature/x --out "$out/nz" >/dev/null 2>&1
+assert_contains "$(cat "$out/nz/tools/summary.txt")" $'test\tUNAVAILABLE(no-tests)' "no tests ran: test row is UNAVAILABLE(no-tests)"
+assert_contains "$(cat "$out/nz/tools/summary.txt")" $'coverage\tUNAVAILABLE(no-tests)' "no tests ran: coverage row says why"
+assert_contains "$(grep $'^test\t' "$out/nz/tools/summary.txt")" "node --test" "no tests ran: the detail names the test script"
+
+# --- a repo path with # and & (sed delimiters and replacement syntax) is handled as text ---
+odd="$(tmpdir)/a#b&c"; mkdir -p "$odd"; mk_node_test "$odd"
+bash "$S/collect.sh" --repo "$odd" --base main --head feature/x --out "$out/odd" >/dev/null 2>&1; rc=$?
+assert_eq "0" "$rc" "repo path with # and &: collect exits 0"
+assert_contains "$(cat "$out/odd/tools/summary.txt" 2>/dev/null)" $'test\tOK\t1 pass' "repo path with # and &: the test row is written"
+# and a package directory with & keeps its name in repo-relative typecheck output
+amp=$(tmpdir); git -C "$amp" init -q -b main
+echo '{ "name": "amp", "workspaces": ["packages/*"], "devDependencies": { "typescript": "5" } }' > "$amp/package.json"
+: > "$amp/package-lock.json"; printf 'node_modules\n' > "$amp/.gitignore"; mkdir -p "$amp/node_modules/.bin" "$amp/packages/a&b/src"
+cp "$sp/node_modules/.bin/tsc" "$amp/node_modules/.bin/tsc"
+echo '{ "name": "ab" }' > "$amp/packages/a&b/package.json"; echo '{}' > "$amp/packages/a&b/tsconfig.json"
+printf 'export const x: number = 1;\n' > "$amp/packages/a&b/src/x.ts"
+git -C "$amp" -c user.email=f@e -c user.name=f add -A; git -C "$amp" -c user.email=f@e -c user.name=f commit -q -m base
+printf 'export const x: number = 2;\n' > "$amp/packages/a&b/src/x.ts"
+bash "$S/collect.sh" --repo "$amp" --base main --head WORKTREE --out "$out/amp" >/dev/null 2>&1
+assert_eq "packages/a&b/src/x.ts(1,14): error TS2322: canned" "$(cat "$out/amp/tools/typecheck-new.txt" 2>/dev/null)" "package dir with &: typecheck-new.txt keeps the name"
+
+# --- a package added by the change, with its own node_modules, has no directory at the merge-base ---
+nb=$(tmpdir); git -C "$nb" init -q -b main
+git -C "$nb" config user.email fixture@example.com; git -C "$nb" config user.name fixture
+echo '{"name":"nb","private":true,"workspaces":["packages/*"]}' > "$nb/package.json"; echo node_modules > "$nb/.gitignore"
+mkdir -p "$nb/node_modules" "$nb/packages/a/node_modules"
+echo '{"name":"a"}' > "$nb/packages/a/package.json"; echo 'export const a = 1;' > "$nb/packages/a/index.js"
+git -C "$nb" add -A && git -C "$nb" commit -q -m base
+git -C "$nb" checkout -q -b feature/x
+mkdir -p "$nb/packages/b/node_modules"; echo '{"name":"b"}' > "$nb/packages/b/package.json"; echo 'export const b = 2;' > "$nb/packages/b/index.js"
+echo 'export const a2 = 3;' >> "$nb/packages/a/index.js"
+git -C "$nb" add -A && git -C "$nb" commit -q -m "add package b"
+bash "$S/collect.sh" --repo "$nb" --base main --head feature/x --out "$out/nb" >/dev/null 2>&1; rc=$?
+assert_eq "0" "$rc" "new package with node_modules: collect exits 0"
+assert_eq "2" "$(grep -c $'^metrics\t' "$out/nb/tools/summary.txt" 2>/dev/null)" "new package: both packages get a metrics row"
+assert_contains "$(grep $'^metrics\t' "$out/nb/tools/summary.txt" 2>/dev/null)" "b: 0 over" "new package: its metrics run without a baseline"
+assert_contains "$(grep $'^metrics\t' "$out/nb/tools/summary.txt" 2>/dev/null)" "no-baseline(new-package)" "new package: the summary says why there is no baseline"
+
+# --- several packages: the top-level test and coverage files end with totals over all of them ---
+mt=$(tmpdir); git -C "$mt" init -q -b main
+git -C "$mt" config user.email fixture@example.com; git -C "$mt" config user.name fixture
+echo '{"name":"mt","private":true,"workspaces":["packages/*"]}' > "$mt/package.json"
+for p in a b; do
+  mkdir -p "$mt/packages/$p/test"
+  echo "{\"name\":\"$p\",\"type\":\"module\",\"scripts\":{\"test\":\"node --test\"}}" > "$mt/packages/$p/package.json"
+  echo 'export const add = (a, b) => a + b;' > "$mt/packages/$p/calc.js"
+  printf "import test from 'node:test';\nimport assert from 'node:assert';\nimport { add } from '../calc.js';\ntest('add', () => assert.equal(add(1, 2), 3));\n" > "$mt/packages/$p/test/calc.test.js"
+done
+git -C "$mt" add -A && git -C "$mt" commit -q -m base
+git -C "$mt" checkout -q -b feature/x
+for p in a b; do echo 'export const sub = (a, b) => a - b;' >> "$mt/packages/$p/calc.js"; done
+git -C "$mt" add -A && git -C "$mt" commit -q -m change
+bash "$S/collect.sh" --repo "$mt" --base main --head feature/x --out "$out/mt" >/dev/null 2>&1
+assert_eq "2" "$(grep -c $'^test\tOK' "$out/mt/tools/summary.txt")" "several packages: one passing test row each"
+assert_eq "PASS=2 FAIL=0 NOT_RUNNABLE=0 SKIP=0" "$(tail -1 "$out/mt/tools/test-classified.txt")" "several packages: test-classified.txt ends with the summed counts"
+assert_eq "TOTAL=2/2" "$(tail -1 "$out/mt/tools/coverage-changed.txt")" "several packages: coverage-changed.txt ends with the summed TOTAL"
 
 finish
