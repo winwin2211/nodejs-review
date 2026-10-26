@@ -109,6 +109,30 @@ assert_eq "preexisting" "$(at 6 complexity 8 "$d/o4/metrics-preexisting.tsv")" "
 assert_eq "-" "$(at 10 max-depth 7 "$d/o4/metrics.tsv")" "statement-level rows have no function: -"
 assert_eq "(anonymous)" "$(at 12 complexity 7 "$d/o4/metrics.tsv")" "a function-level row without a name says (anonymous)"
 
+# a function flagged only by sonarjs/cognitive-complexity (its message names
+# no function) is named from its own source line; a callback stays anonymous
+mkdir -p "$d/o6"
+printf '%s\n' 'export function legacyDeep(order) {' '}' 'const deepArrow = async (x) => {' '}' 'class K {' '  static deepMethod(a) {' '  }' '}' 'items.forEach((v) => {' '})' 'if (ok) {' '}' "test('x', function () {" '})' > "$repo/src/deep.js"
+cat > "$d/head6.json" <<EOF
+[{"filePath": "$repo/src/deep.js", "messages": [
+  {"ruleId": "sonarjs/cognitive-complexity", "severity": 2, "message": "Refactor this function to reduce its Cognitive Complexity from 21 to the 15 allowed.", "line": 1, "column": 17},
+  {"ruleId": "sonarjs/cognitive-complexity", "severity": 2, "message": "Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.", "line": 3, "column": 19},
+  {"ruleId": "sonarjs/cognitive-complexity", "severity": 2, "message": "Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed.", "line": 6, "column": 10},
+  {"ruleId": "sonarjs/cognitive-complexity", "severity": 2, "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.", "line": 9, "column": 15},
+  {"ruleId": "sonarjs/cognitive-complexity", "severity": 2, "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.", "line": 11, "column": 1},
+  {"ruleId": "sonarjs/cognitive-complexity", "severity": 2, "message": "Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.", "line": 13, "column": 11}
+]}]
+EOF
+printf 'src/deep.js\t%s\n' 1 3 6 9 11 13 > "$d/added6.tsv"
+bash "$S/metrics-report.sh" "$d/head6.json" "$repo" - - - "$d/added6.tsv" "$d/o6" >/dev/null
+fn6() { awk -F'\t' -v l="$1" '$1 == "src/deep.js" && $2 == l { print $7 }' "$d/o6/metrics.tsv"; }
+assert_eq "legacyDeep" "$(fn6 1)" "cognitive only: a function declaration is named from its line"
+assert_eq "deepArrow" "$(fn6 3)" "cognitive only: an arrow function assigned to a const is named"
+assert_eq "deepMethod" "$(fn6 6)" "cognitive only: a static method is named"
+assert_eq "(anonymous)" "$(fn6 9)" "cognitive only: a callback stays (anonymous)"
+assert_eq "(anonymous)" "$(fn6 11)" "cognitive only: a keyword such as if is never a name"
+assert_eq "(anonymous)" "$(fn6 13)" "cognitive only: an anonymous function passed to a call is not named after the call"
+
 # no-magic-numbers: the value column is the literal as written, in every numeric form
 mkdir -p "$d/o5"
 cat > "$d/head5.json" <<EOF

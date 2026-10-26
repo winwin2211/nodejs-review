@@ -14,7 +14,8 @@
 #   no-magic-numbers MINOR (value = the literal) | duplication (jscpd) MAJOR, value = lines;
 #   a clone between two test files counts only above 30 lines
 # The function column is the name in the message (or of a named row on the same
-# line), `(anonymous)` for a nameless function, `-` for a statement-level rule.
+# line, or the name its source line declares), `(anonymous)` for a nameless
+# function, `-` for a statement-level rule.
 # Origin: with a baseline, `new` unless the same metric was already over at the
 # merge-base for the same named function or, for statement-level rows and
 # anonymous functions, on a line with the same source text (lines move between
@@ -78,8 +79,27 @@ awk -F'\t' -v OFS='\t' -v hasbase="$HAS_BASE" -v headroot="$HEAD_ROOT" -v basero
     nm = fname(msg)
     if (nm == "" && names == "base" && ((file SUBSEP line) in bname)) nm = bname[file, line]
     if (nm == "" && names == "head" && ((file SUBSEP line) in hname)) nm = hname[file, line]
+    if (nm == "" && is_function_level(rule)) nm = srcname(names == "base" ? baseroot : headroot, file, line)
     if (nm == "") nm = is_function_level(rule) ? "(anonymous)" : "-"
     return nm
+  }
+  # srcname ROOT FILE LINE -> the function a flagged line declares (`function
+  # NAME(`, `NAME = (...) =>` or `NAME = function`, a `NAME(...) {` method),
+  # else "": sonarjs/cognitive-complexity names no function in its message
+  function srcname(root, file, n,   t, m) {
+    t = srctext(root, file, n)
+    if (match(t, /function\*?[ \t]+[A-Za-z_$][A-Za-z0-9_$]*/)) {
+      m = substr(t, RSTART, RLENGTH); sub(/^function\*?[ \t]+/, "", m); return m
+    }
+    if (match(t, /^(export[ \t]+)?(const|let|var)[ \t]+[A-Za-z_$][A-Za-z0-9_$]*[ \t]*=[ \t]*(async[ \t]+)?(function|\(|[A-Za-z_$][A-Za-z0-9_$]*[ \t]*=>)/)) {
+      m = t; sub(/^(export[ \t]+)?(const|let|var)[ \t]+/, "", m); sub(/[ \t]*=.*$/, "", m); return m
+    }
+    # a method signature, never a call whose argument is a function (`test('x', function () {`)
+    if (t !~ /function|=>/ && match(t, /^((static|async|get|set|public|private|protected|override)[ \t]+)*[A-Za-z_$][A-Za-z0-9_$]*[ \t]*\(.*\)[ \t]*(:[^{]*)?\{/)) {
+      m = t; while (sub(/^(static|async|get|set|public|private|protected|override)[ \t]+/, "", m)) {}; sub(/[ \t]*\(.*$/, "", m)
+      if (m !~ /^(if|for|while|switch|catch|return|function|with|do|else)$/) return m
+    }
+    return ""
   }
   function srctext(root, file, n,   path, l, k) {
     path = root "/" file

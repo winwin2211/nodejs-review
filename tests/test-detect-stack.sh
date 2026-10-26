@@ -58,6 +58,13 @@ printf 'packages/group/api/src/x.ts\n' > "$out/b3-changed.txt"
 bash "$S/detect-stack.sh" --repo "$b3" --out "$out/b3" --changed-files "$out/b3-changed.txt"; rc=$?
 assert_eq "0" "$rc" "b3: a ** workspace glob does not end the script"
 assert_eq "packages/group/api" "$(val "$out/b3/stack.env" PACKAGES)" "b3: ** matches nested packages"
+# pnpm-workspace.yaml in flow form: packages: ["apps/*", 'libs/*']
+b5=$(mkrepo); echo '{"name":"b5"}' > "$b5/package.json"; printf 'packages: ["apps/*", '"'"'libs/*'"'"']\n' > "$b5/pnpm-workspace.yaml"
+mkdir -p "$b5/apps/web" "$b5/libs/core"; echo '{"name":"web"}' > "$b5/apps/web/package.json"; echo '{"name":"core"}' > "$b5/libs/core/package.json"
+printf 'libs/core/src/x.ts\n' > "$out/b5-changed.txt"
+bash "$S/detect-stack.sh" --repo "$b5" --out "$out/b5" --changed-files "$out/b5-changed.txt"
+assert_eq "1" "$(val "$out/b5/stack.env" WORKSPACES)" "b5: an inline packages list is a workspace"
+assert_eq "libs/core" "$(val "$out/b5/stack.env" PACKAGES)" "b5: the second inline glob, single-quoted, finds its package"
 b4=$(mkrepo); echo '{"name":"b4","workspaces":["packages/my api"]}' > "$b4/package.json"
 mkdir -p "$b4/packages/my api"; echo '{"name":"my-api"}' > "$b4/packages/my api/package.json"
 printf 'packages/my api/x.js\n' > "$out/b4-changed.txt"
@@ -157,6 +164,9 @@ assert_eq "4" "$(val "$out/h/stack.env" PACKAGES | tr ':' '\n' | wc -l | tr -d '
 bash "$S/detect-stack.sh" --repo "$h" --out "$out/h2" --changed-files "$out/h-changed.txt" --package packages/p5
 assert_eq "packages/p5" "$(val "$out/h2/stack.env" PACKAGES)" "h2: --package forces the package"
 assert_eq "0" "$(val "$out/h2/stack.env" PACKAGES_OVERFLOW)" "h2: no overflow with --package"
+# a trailing slash, as tab completion writes it, names the same package
+bash "$S/detect-stack.sh" --repo "$h" --out "$out/h3" --changed-files "$out/h-changed.txt" --package packages/p5/
+assert_eq "packages/p5" "$(val "$out/h3/stack.env" PACKAGES)" "h3: --package with a trailing slash is the same package"
 
 # (i) no package.json anywhere
 i=$(mkrepo); echo hi > "$i/README.md"

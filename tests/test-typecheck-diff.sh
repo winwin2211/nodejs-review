@@ -24,4 +24,10 @@ assert_not_contains "$r" "Found 2 errors" "summary lines are never errors"
 : > "$d/empty.txt"
 assert_eq "" "$(bash "$S/typecheck-diff.sh" "$d/empty.txt" "$d/base.txt")" "a clean head yields nothing"
 
+# the same error text twice in one file, once at base: one of the two is new
+printf '%s\n' "src/a.ts(3,5): error TS2554: Expected 2 arguments, but got 1." > "$d/base-dup.txt"
+printf '%s\n' "src/a.ts(3,5): error TS2554: Expected 2 arguments, but got 1." "src/a.ts(9,5): error TS2554: Expected 2 arguments, but got 1." > "$d/head-dup.txt"
+r=$(bash "$S/typecheck-diff.sh" "$d/head-dup.txt" "$d/base-dup.txt")
+assert_eq "1" "$(printf '%s' "$r" | grep -c 'error TS2554')" "a second occurrence of an error the base had once is new"
+
 finish

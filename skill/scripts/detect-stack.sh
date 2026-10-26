@@ -39,8 +39,10 @@ fi
 PKG_JSON="$REPO/$PKG_ROOT/package.json"
 # pj FILTER -> its output from package.json, a line break inside a string read as a space
 pj() { jq -r "($1) | if type == \"string\" then gsub(\"[\\r\\n]\"; \" \") else . end" "$PKG_JSON" 2>/dev/null || true; }
-rel() { # path relative to repo, no leading ./
-  local p=$1; p=${p#"$REPO"/}; p=${p#./}; printf '%s\n' "$p"
+rel() { # path relative to repo, no leading ./, no trailing / (tab completion adds one)
+  local p=$1; p=${p#"$REPO"/}; p=${p#./}
+  while [[ "$p" == ?*/ ]]; do p=${p%/}; done
+  printf '%s\n' "$p"
 }
 in_pkg_root() { [[ -e "$REPO/$PKG_ROOT/$1" ]]; }
 
@@ -73,7 +75,15 @@ done
 WORKSPACES=0
 ws_globs=$(pj '(.workspaces // empty) | if type == "array" then .[] else (.packages // [])[] end')
 if [[ -z "$ws_globs" ]] && in_pkg_root pnpm-workspace.yaml; then
-  ws_globs=$(awk '/^packages:/ { on = 1; next } on && /^[[:space:]]*-/ { s = $0; sub(/^[[:space:]]*-[[:space:]]*/, "", s); gsub(/["'\'']/, "", s); print s; next } on && !/^[[:space:]]/ { on = 0 }' "$REPO/$PKG_ROOT/pnpm-workspace.yaml")
+  # block form (`packages:` then `- glob` lines) or flow form (`packages: ["a/*", 'b/*']`, possibly over several lines)
+  ws_globs=$(awk '
+    function flow_items(t,   n, a, i, g) {
+      if (t ~ /\]/) { flow = 0; sub(/\].*$/, "", t) }
+      n = split(t, a, ","); for (i = 1; i <= n; i++) { g = a[i]; gsub(/["'\'']/, "", g); gsub(/^[[:space:]]+|[[:space:]]+$/, "", g); if (g != "") print g }
+    }
+    /^packages:[[:space:]]*\[/ { flow = 1; t = $0; sub(/^packages:[[:space:]]*\[/, "", t); flow_items(t); next }
+    flow { flow_items($0); next }
+    /^packages:/ { on = 1; next } on && /^[[:space:]]*-/ { s = $0; sub(/^[[:space:]]*-[[:space:]]*/, "", s); gsub(/["'\'']/, "", s); print s; next } on && !/^[[:space:]]/ { on = 0 }' "$REPO/$PKG_ROOT/pnpm-workspace.yaml")
 fi
 # ws_expand GLOB -> the directories (relative to the package root) the glob
 # names that hold a package.json. A glob may match nothing, or a README; `**`
